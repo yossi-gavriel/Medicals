@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets & local config
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Local data / artifacts
+local_storage/
+tmp/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+dump.rdb
+
+# Docker
+.docker/
+
+# OS
+.AppleDouble
+.LSOverride
+Icon?
+
+# Reference / seed data (may contain sensitive info — commit explicitly when ready)
+data/
+
+# Customer-side connector (separate deployment unit — committed separately)
+medical_classifier_option_c/
+
+# Connector run artifacts
+medical_classifier_option_c/processed_documents.csv
+medical_classifier_option_c/failed_documents.csv
+medical_classifier_option_c/examples/local_test_docs/
+
+# Connector-specific tests (depend on medical_classifier_option_c being present)
+tests/test_customer_connector.py
+tests/test_customer_connector_integration.py
+tests/test_connector_config_and_dryrun.py

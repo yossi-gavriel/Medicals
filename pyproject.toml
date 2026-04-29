@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drug-safety-engine"
+version = "1.0.0"
+description = "Clinical decision support engine for drug-drug interaction safety and medical document classification."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [{ name = "Drug Safety Engine Team" }]
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.4",
+    "pydantic-settings==2.7.0",
+    "SQLAlchemy==2.0.36",
+    "asyncpg==0.30.0",
+    "psycopg[binary]==3.2.3",
+    "alembic==1.14.0",
+    "redis==5.2.1",
+    "httpx==0.28.1",
+    "tenacity==9.0.0",
+    "orjson==3.10.12",
+    "arq==0.26.1",
+    "boto3==1.35.92",
+    "prometheus-client==0.21.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+    "pytest-cov==6.0.0",
+    "ruff==0.8.4",
+    "mypy==1.13.0",
+    "types-redis==4.6.0.20241004",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["tests*", "medical_classifier_option_c*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["alembic/versions", "medical_classifier_option_c"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "RET", "SIM"]
+ignore = [
+    "E501",   # let formatter handle long lines
+    "B008",   # FastAPI Depends() in defaults is idiomatic
+    "S101",   # asserts are fine in tests
+    "S105",   # false positives on key names
+    "S106",
+    "S107",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B017"]
+"scripts/**" = ["S"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["alembic/versions", "medical_classifier_option_c"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["app/main.py", "app/workers/outbox_publisher.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 70

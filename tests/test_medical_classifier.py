@@ -61,6 +61,17 @@ class RecordingRunner:
         return {"result_code": self.result_code}
 
 
+class RichRunner:
+    def run_idx(self, *, text: str, prompt: str, key: str, system_message: str) -> dict[str, object]:
+        return {
+            "result_code": "1",
+            "matched_text": "procedure was performed",
+            "evidence": ["procedure was performed"],
+            "confidence": 0.91,
+            "explanation": "Clear performance language.",
+        }
+
+
 class PlanningAwareRunner:
     def run_idx(self, *, text: str, prompt: str, key: str, system_message: str) -> dict[str, str]:
         has_negative_guidance = "התקבל לצורך ניתוח" in prompt and "Negative examples" in prompt
@@ -104,7 +115,8 @@ def test_prompt_builder_preserves_existing_json_prompt_shape(tmp_path: Path) -> 
     assert "system_message" in prompt_json
     assert isinstance(prompt_json["IDX_PROCEDURE_PERFORMED"], list)
     assert prompt_json["IDX_PROCEDURE_PERFORMED"][1] == "full"
-    assert '{"result_code": "0"}' in prompt_json["IDX_PROCEDURE_PERFORMED"][0]
+    assert '"matched_text"' in prompt_json["IDX_PROCEDURE_PERFORMED"][0]
+    assert '"evidence"' in prompt_json["IDX_PROCEDURE_PERFORMED"][0]
 
 
 def test_service_uses_definition_prompt_when_treatment_code_exists(tmp_path: Path) -> None:
@@ -130,6 +142,14 @@ def test_service_uses_definition_prompt_when_treatment_code_exists(tmp_path: Pat
     assert result.used_definition is True
     assert result.prompt_source == "definition"
     assert result.idx_results["IDX_PROCEDURE_PERFORMED"] == 1
+    assert result.index_details["IDX_PROCEDURE_PERFORMED"] == {
+        "result_code": 1,
+        "found": True,
+        "matched_text": None,
+        "evidence": [],
+        "confidence": None,
+        "explanation": None,
+    }
     assert runner.calls[0]["key"] == "IDX_PROCEDURE_PERFORMED"
     assert "[ID_REMOVED]" in runner.calls[0]["text"]
 
@@ -164,7 +184,37 @@ def test_service_falls_back_to_prompt_provider_when_definition_is_missing(tmp_pa
     assert result.used_definition is False
     assert result.prompt_source == "fallback"
     assert result.idx_results == {"IDX_FALLBACK": 1}
+    assert result.index_details["IDX_FALLBACK"]["found"] is True
     assert runner.calls[0]["text"] == "fallback description"
+
+
+def test_service_builds_rich_index_details_without_storing_snippets_in_raw_output(tmp_path: Path) -> None:
+    definitions_dir = tmp_path / "definitions"
+    definitions_dir.mkdir()
+    _write_definition(definitions_dir / "defined.json", "PROC_DEFINED")
+    service = ProcedureClassificationService(
+        llm_runner=RichRunner(),
+        definitions_path=definitions_dir,
+    )
+
+    result = service.classify_document(
+        ProcedureClassificationInput(
+            treatment_code="PROC_DEFINED",
+            file_full_text="procedure was performed",
+        )
+    )
+
+    assert result.idx_results == {"IDX_PROCEDURE_PERFORMED": 1}
+    assert result.index_details["IDX_PROCEDURE_PERFORMED"] == {
+        "result_code": 1,
+        "found": True,
+        "matched_text": "procedure was performed",
+        "evidence": ["procedure was performed"],
+        "confidence": 0.91,
+        "explanation": "Clear performance language.",
+    }
+    assert "matched_text" not in result.raw_model_output["IDX_PROCEDURE_PERFORMED"]
+    assert "evidence" not in result.raw_model_output["IDX_PROCEDURE_PERFORMED"]
 
 
 def test_pii_masking_removes_likely_israeli_ids() -> None:
@@ -208,3 +258,55 @@ def test_build_llm_runner_uses_env_api_key(monkeypatch: Any) -> None:
 
     assert isinstance(runner, ConfigurableLLMJsonPromptRunner)
     assert runner.api_key == "env-secret"
+
+
+def test_llm_runner_normalizes_legacy_and_rich_index_payloads() -> None:
+    responses = iter(
+        [
+            {"choices": [{"message": {"content": '{"result_code": 1}'}}]},
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "result_code": 1,
+                                    "matched_text": "procedure was performed",
+                                    "evidence": ["procedure was performed"],
+                                    "confidence": 0.91,
+                                    "explanation": "Clear performance language.",
+                                }
+                            )
+                        }
+                    }
+                ]
+            },
+        ]
+    )
+
+    def sender(
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, object],
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        return next(responses)
+
+    settings = Settings(
+        medical_classifier_llm_provider="openai",
+        medical_classifier_llm_model="gpt-4o-mini",
+        medical_classifier_llm_api_key="test-key",
+    )
+    runner = ConfigurableLLMJsonPromptRunner.from_settings(settings, request_sender=sender)
+
+    legacy = runner.run_idx(text="text", prompt="prompt", key="IDX_A", system_message="system")
+    rich = runner.run_idx(text="text", prompt="prompt", key="IDX_A", system_message="system")
+
+    assert legacy == {"result_code": 1}
+    assert rich == {
+        "result_code": 1,
+        "matched_text": "procedure was performed",
+        "evidence": ["procedure was performed"],
+        "confidence": 0.91,
+        "explanation": "Clear performance language.",
+    }

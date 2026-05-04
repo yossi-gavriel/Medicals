@@ -68,6 +68,7 @@ class MedicalClassifierDocumentResponse(BaseModel):
     status: Literal["success", "error"]
     result_code: int | str | None
     indexes: dict[str, Any] = Field(default_factory=dict)
+    index_details: dict[str, Any] = Field(default_factory=dict)
     message: str | None = None
     error_code: str | None = None
     retryable: bool = False

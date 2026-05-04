@@ -32,6 +32,7 @@ class ProcedureClassificationResult:
     result_code: int
     masked: bool
     idx_results: dict[str, int]
+    index_details: dict[str, dict[str, Any]]
     raw_model_output: dict[str, dict[str, Any]]
     error: dict[str, Any] | None
     masked_file_desc: str
@@ -51,6 +52,51 @@ def _derive_overall_result_code(idx_results: Mapping[str, int]) -> int:
     if not idx_results:
         return 0
     return 1 if all(value == 1 for value in idx_results.values()) else 0
+
+
+def _as_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _as_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_index_detail(result_code: int, response: Mapping[str, Any] | Any) -> dict[str, Any]:
+    data = response if isinstance(response, Mapping) else {}
+    return {
+        "result_code": result_code,
+        "found": result_code == 1,
+        "matched_text": _as_optional_str(data.get("matched_text")),
+        "evidence": _as_str_list(data.get("evidence")),
+        "confidence": _as_optional_float(data.get("confidence")),
+        "explanation": _as_optional_str(data.get("explanation")),
+    }
+
+
+def _raw_model_output_without_snippets(response: Mapping[str, Any] | Any) -> dict[str, Any]:
+    if not isinstance(response, Mapping):
+        return {}
+    return {key: value for key, value in response.items() if key not in {"matched_text", "evidence"}}
 
 
 class ProcedureClassificationService:
@@ -88,7 +134,9 @@ class ProcedureClassificationService:
         prompt_json, prompt_source, used_definition = self._resolve_prompt_json(document.treatment_code)
         masked_desc = self._prepare_text(document.file_desc)
         masked_full = self._prepare_text(document.file_full_text or document.file_desc)
-        idx_results, raw_model_output, error = self._run_prompt_json(prompt_json, masked_desc, masked_full)
+        idx_results, index_details, raw_model_output, error = self._run_prompt_json(
+            prompt_json, masked_desc, masked_full
+        )
 
         return ProcedureClassificationResult(
             treatment_code=document.treatment_code,
@@ -97,6 +145,7 @@ class ProcedureClassificationService:
             result_code=_derive_overall_result_code(idx_results),
             masked=self.mask_pii_before_llm,
             idx_results=idx_results,
+            index_details=index_details,
             raw_model_output=raw_model_output,
             error=error,
             masked_file_desc=masked_desc,
@@ -133,9 +182,10 @@ class ProcedureClassificationService:
         prompt_json: dict[str, object],
         masked_desc: str,
         masked_full: str,
-    ) -> tuple[dict[str, int], dict[str, dict[str, Any]], dict[str, Any] | None]:
+    ) -> tuple[dict[str, int], dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any] | None]:
         system_message = str(prompt_json.get("system_message", "") or "")
         idx_results: dict[str, int] = {}
+        index_details: dict[str, dict[str, Any]] = {}
         raw_model_output: dict[str, dict[str, Any]] = {}
         error: dict[str, Any] | None = None
 
@@ -155,10 +205,12 @@ class ProcedureClassificationService:
                 key=key,
                 system_message=system_message,
             )
-            idx_results[key] = _coerce_result_code(response)
-            raw_model_output[key] = dict(response)
+            result_code = _coerce_result_code(response)
+            idx_results[key] = result_code
+            index_details[key] = _build_index_detail(result_code, response)
+            raw_model_output[key] = _raw_model_output_without_snippets(response)
             response_error = response.get("error") if isinstance(response, Mapping) else None
             if error is None and isinstance(response_error, Mapping):
                 error = dict(response_error)
 
-        return idx_results, raw_model_output, error
+        return idx_results, index_details, raw_model_output, error

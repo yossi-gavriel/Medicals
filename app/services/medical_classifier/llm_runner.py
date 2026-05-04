@@ -207,7 +207,7 @@ class ConfigurableLLMJsonPromptRunner:
             )
 
         normalized: dict[str, Any] = {"result_code": normalized_result_code}
-        for optional_key in ("explanation", "confidence", "reasoning"):
+        for optional_key in ("matched_text", "evidence", "explanation", "confidence", "reasoning"):
             if optional_key in parsed:
                 normalized[optional_key] = parsed[optional_key]
         return normalized

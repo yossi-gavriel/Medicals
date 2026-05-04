@@ -58,6 +58,17 @@ class RecordingRunner:
         return {"result_code": self.result_code}
 
 
+class RichRunner:
+    def run_idx(self, *, text: str, prompt: str, key: str, system_message: str) -> dict[str, object]:
+        return {
+            "result_code": "1",
+            "matched_text": "procedure was performed",
+            "evidence": ["procedure was performed"],
+            "confidence": 0.91,
+            "explanation": "Clear performance language.",
+        }
+
+
 def _build_test_client(service: ProcedureClassificationService) -> TestClient:
     app = FastAPI()
     app.state.medical_classifier_service = service
@@ -137,6 +148,16 @@ def test_internal_medical_classifier_route_happy_path(tmp_path: Path) -> None:
             "prompt_source": "definition",
             "used_definition": True,
             "idx_results": {"IDX_PROCEDURE_PERFORMED": 1},
+            "index_details": {
+                "IDX_PROCEDURE_PERFORMED": {
+                    "result_code": 1,
+                    "found": True,
+                    "matched_text": None,
+                    "evidence": [],
+                    "confidence": None,
+                    "explanation": None,
+                }
+            },
             "raw": {"IDX_PROCEDURE_PERFORMED": {"result_code": "1"}},
         },
         "error": None,
@@ -328,6 +349,16 @@ def test_public_medical_classifier_document_route_happy_path(
         "status": "success",
         "result_code": 1,
         "indexes": {"IDX_PROCEDURE_PERFORMED": 1},
+        "index_details": {
+            "IDX_PROCEDURE_PERFORMED": {
+                "result_code": 1,
+                "found": True,
+                "matched_text": None,
+                "evidence": [],
+                "confidence": None,
+                "explanation": None,
+            }
+        },
         "message": None,
         "error_code": None,
         "retryable": False,
@@ -335,6 +366,45 @@ def test_public_medical_classifier_document_route_happy_path(
         "request_id": response.json()["request_id"],
     }
     assert response.json()["request_id"]
+
+
+def test_public_medical_classifier_document_route_returns_rich_index_details_without_audit_snippets(
+    tmp_path: Path,
+    session_factory,
+) -> None:
+    definitions_dir = tmp_path / "definitions"
+    definitions_dir.mkdir()
+    _write_definition(definitions_dir / "arthroscopy_knee.json", "arthroscopy_knee")
+    service = ProcedureClassificationService(llm_runner=RichRunner(), definitions_path=definitions_dir)
+    client = _build_test_client_with_db(service, session_factory)
+
+    response = client.post(
+        "/v1/medical-classifier/classify-document",
+        json={
+            "file_name": "doc-1.pdf",
+            "doc_type": 3,
+            "treatment_code": "arthroscopy_knee",
+            "cleaned_full": "procedure was performed",
+            "metadata": {"source_system": "connector"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["indexes"] == {"IDX_PROCEDURE_PERFORMED": 1}
+    assert body["index_details"] == {
+        "IDX_PROCEDURE_PERFORMED": {
+            "result_code": 1,
+            "found": True,
+            "matched_text": "procedure was performed",
+            "evidence": ["procedure was performed"],
+            "confidence": 0.91,
+            "explanation": "Clear performance language.",
+        }
+    }
+    row = _audit_rows(session_factory)[0]
+    assert row.indexes_json == {"IDX_PROCEDURE_PERFORMED": 1}
+    assert "procedure was performed" not in str(vars(row))
 
 
 def test_public_medical_classifier_document_route_maps_cleaned_full_to_service(

@@ -6,7 +6,7 @@ DEFAULT_SYSTEM_MESSAGE = """
 You are a senior medical document reviewer.
 Your job is to classify only what was actually performed during the current hospitalization/action.
 Do not infer performance from admission reason, plan, referral, recommendation, consent, previous surgeries, or future scheduling.
-Return only the requested structured result_code values.
+Return only the requested structured JSON fields.
 """.strip()
 
 
@@ -61,8 +61,16 @@ Return result_code = 0 if it is only planned, recommended, admission purpose, hi
 {_format_list("Positive examples", category.examples_positive)}
 {_format_list("Negative examples", category.examples_negative)}
 
-Output strictly as JSON with one field:
-{{"result_code": "0"}} or {{"result_code": "1"}}
+Output strictly as JSON with these fields:
+{{
+  "result_code": "0" or "1",
+  "matched_text": "short exact supporting snippet or null",
+  "evidence": ["short supporting snippets"],
+  "confidence": 0.0,
+  "explanation": "brief non-sensitive reason"
+}}
+
+If result_code is "0", use null/empty evidence fields unless there is useful negative evidence.
 """.strip()
         prompt_json[category.key] = [prompt, category.scope]
 

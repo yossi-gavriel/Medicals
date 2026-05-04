@@ -72,6 +72,15 @@ dump.rdb
 # Docker
 .docker/
 
+# Terraform local artifacts
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+
 # OS
 .AppleDouble
 .LSOverride

@@ -9,7 +9,6 @@ import pytest
 
 from app.lambda_handlers import medical_classifier_handler as handler
 
-
 API_KEY = "test-api-key"
 
 
@@ -230,19 +229,27 @@ def test_dynamodb_write_success_uses_only_allowed_fields(monkeypatch: pytest.Mon
     table, item = captured[0]
     assert table == "audit-table"
     assert set(item) == {
+        "tenant_id",
         "request_id",
-        "api_key_id_hash",
-        "treatment_code",
+        "api_key_id",
+        "api_key_hash_prefix",
+        "project_number",
+        "procedure_code",
         "document_hash",
-        "result_code",
-        "indexes",
+        "action",
+        "status",
+        "duration_ms",
+        "storage_policy_used",
+        "error_code",
         "created_at",
     }
     assert item["request_id"] == "req-test"
-    assert item["api_key_id_hash"] == _sha256(API_KEY)
+    assert item["api_key_hash_prefix"] == _sha256(API_KEY)[:16]
     assert item["document_hash"] == _sha256("sensitive medical text")
-    assert item["result_code"] == 1
-    assert item["indexes"] == {"IDX_KEY": 1}
+    assert item["action"] == "classify_document"
+    assert item["status"] == "success"
+    assert item["storage_policy_used"] == "local_only"
+    assert item["error_code"] is None
     serialized = json.dumps(item, ensure_ascii=False)
     assert "cleaned_full" not in serialized
     assert "cleaned_desc" not in serialized
@@ -313,4 +320,3 @@ def test_privacy_audit_and_logs_do_not_include_text_snippets_or_api_key(
     assert evidence not in audit_and_logs
     assert api_key not in audit_and_logs
     assert _body(response)["index_details"]["IDX_KEY"]["matched_text"] == matched_text
-

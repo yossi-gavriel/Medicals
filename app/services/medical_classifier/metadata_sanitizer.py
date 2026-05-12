@@ -11,6 +11,7 @@ AUDIT_METADATA_ALLOWLIST: frozenset[str] = frozenset(
         "run_id",
         "connector_version",
         "environment",
+        "external_document_id",
         "customer_reference",
         "external_trace_id",
     }
@@ -34,9 +35,7 @@ def sanitize_metadata_for_audit(metadata: dict | None) -> dict:
     for key, value in metadata.items():
         if key not in AUDIT_METADATA_ALLOWLIST:
             continue
-        if isinstance(value, bool):
-            result[key] = value
-        elif isinstance(value, (int, float)):
+        if isinstance(value, (bool, int, float)):
             result[key] = value
         elif isinstance(value, str):
             result[key] = value[:_MAX_VALUE_LENGTH]

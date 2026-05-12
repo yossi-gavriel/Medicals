@@ -18,9 +18,18 @@ output "lambda_log_group_name" {
   value       = aws_cloudwatch_log_group.lambda.name
 }
 
-output "audit_table_name" {
-  description = "DynamoDB audit table name."
-  value       = aws_dynamodb_table.medical_classifier_audit.name
+output "table_names" {
+  description = "DynamoDB table names used by the Phase 1 serverless MedicalClassifier platform."
+  value = {
+    tenants                 = aws_dynamodb_table.medical_classifier_tenants.name
+    api_keys                = aws_dynamodb_table.medical_classifier_api_keys.name
+    projects                = aws_dynamodb_table.medical_classifier_projects.name
+    procedure_specs         = aws_dynamodb_table.medical_classifier_procedure_specs.name
+    procedure_spec_versions = aws_dynamodb_table.medical_classifier_procedure_spec_versions.name
+    classification_runs     = aws_dynamodb_table.medical_classifier_classification_runs.name
+    classification_results  = aws_dynamodb_table.medical_classifier_classification_results.name
+    audit_logs              = aws_dynamodb_table.medical_classifier_audit_logs.name
+  }
 }
 
 output "api_key_hashes_ssm_parameter_name" {

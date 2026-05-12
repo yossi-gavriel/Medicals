@@ -80,10 +80,52 @@ variable "api_stage_name" {
   default     = "$default"
 }
 
-variable "audit_table_name" {
-  description = "DynamoDB audit table name."
+variable "tenants_table_name" {
+  description = "DynamoDB tenants table name."
   type        = string
-  default     = "medical_classifier_audit"
+  default     = "medicalclassifier-tenants"
+}
+
+variable "api_keys_table_name" {
+  description = "DynamoDB API key hash lookup table name."
+  type        = string
+  default     = "medicalclassifier-api-keys"
+}
+
+variable "projects_table_name" {
+  description = "DynamoDB projects table name."
+  type        = string
+  default     = "medicalclassifier-projects"
+}
+
+variable "procedure_specs_table_name" {
+  description = "DynamoDB procedure specs table name."
+  type        = string
+  default     = "medicalclassifier-procedure-specs"
+}
+
+variable "procedure_spec_versions_table_name" {
+  description = "DynamoDB immutable procedure spec versions table name."
+  type        = string
+  default     = "medicalclassifier-procedure-spec-versions"
+}
+
+variable "classification_runs_table_name" {
+  description = "DynamoDB classification runs table name."
+  type        = string
+  default     = "medicalclassifier-classification-runs"
+}
+
+variable "classification_results_table_name" {
+  description = "DynamoDB sanitized classification results table name."
+  type        = string
+  default     = "medicalclassifier-classification-results"
+}
+
+variable "audit_logs_table_name" {
+  description = "DynamoDB sanitized audit logs table name."
+  type        = string
+  default     = "medicalclassifier-audit-logs"
 }
 
 variable "api_key_hashes" {
@@ -148,11 +190,10 @@ variable "medical_classifier_llm_api_key_env_name" {
   default     = "OPENAI_API_KEY"
 }
 
-variable "medical_classifier_llm_api_key" {
-  description = "Provider API key value passed to MEDICAL_CLASSIFIER_LLM_API_KEY. Prefer secret injection in production workflows."
+variable "medical_classifier_llm_api_key_ssm_parameter_name" {
+  description = "Optional SSM SecureString parameter name holding the LLM API key. The plaintext value is loaded by Lambda at runtime and is not stored in Terraform state."
   type        = string
   default     = ""
-  sensitive   = true
 }
 
 variable "medical_classifier_llm_timeout_seconds" {
@@ -166,4 +207,3 @@ variable "extra_lambda_environment" {
   type        = map(string)
   default     = {}
 }
-

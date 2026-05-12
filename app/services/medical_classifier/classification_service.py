@@ -22,6 +22,8 @@ class ProcedureClassificationInput:
     treatment_code: str
     file_desc: str = ""
     file_full_text: str = ""
+    prompt_json: Mapping[str, object] | None = None
+    prompt_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ def _coerce_result_code(response: Mapping[str, Any] | Any) -> int:
     if isinstance(response, Mapping):
         raw = response.get("result_code")
     elif hasattr(response, "result_code"):
-        raw = getattr(response, "result_code")
+        raw = response.result_code
     return 1 if str(raw).strip() == "1" else 0
 
 
@@ -122,7 +124,7 @@ class ProcedureClassificationService:
         llm_runner: JsonPromptRunner,
         settings: Settings,
         prompt_provider: PromptProvider | None = None,
-    ) -> "ProcedureClassificationService":
+    ) -> ProcedureClassificationService:
         return cls(
             llm_runner=llm_runner,
             definitions_path=settings.medical_classifier_procedure_definitions_path,
@@ -131,7 +133,12 @@ class ProcedureClassificationService:
         )
 
     def classify_document(self, document: ProcedureClassificationInput) -> ProcedureClassificationResult:
-        prompt_json, prompt_source, used_definition = self._resolve_prompt_json(document.treatment_code)
+        if document.prompt_json is not None:
+            prompt_json = dict(document.prompt_json)
+            prompt_source = document.prompt_source or "procedure_spec"
+            used_definition = False
+        else:
+            prompt_json, prompt_source, used_definition = self._resolve_prompt_json(document.treatment_code)
         masked_desc = self._prepare_text(document.file_desc)
         masked_full = self._prepare_text(document.file_full_text or document.file_desc)
         idx_results, index_details, raw_model_output, error = self._run_prompt_json(

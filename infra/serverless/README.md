@@ -5,7 +5,7 @@ This Terraform module deploys the lightweight MedicalClassifier Lambda handler:
 ```text
 API Gateway HTTP API
 -> Lambda dedicated handler
--> DynamoDB audit table
+-> DynamoDB customer/project/spec/run/result/audit tables
 -> env config / optional SSM SecureString
 -> CloudWatch Logs
 ```
@@ -18,10 +18,14 @@ app.lambda_handlers.medical_classifier_handler.lambda_handler
 
 ## What This Does
 
-- Exposes `POST /v1/medical-classifier/classify-document`.
+- Exposes the backward-compatible `POST /v1/medical-classifier/classify-document`.
+- Exposes customer, project, procedure spec, spec version, and classification
+  run routes under `/v1`.
 - Keeps compatibility with OmniScan's `X-API-Key` contract.
 - Runs the dedicated Lambda handler without importing `app.main` or FastAPI routes.
-- Writes minimal audit records to DynamoDB.
+- Stores tenant/customer metadata, hashed API keys, projects, procedure specs,
+  immutable spec versions, sanitized classification runs/results, and sanitized
+  audit logs in DynamoDB.
 - Creates a Lambda CloudWatch log group with retention.
 - Stores API key hashes in Lambda env vars and can mirror them to SSM SecureString.
 
@@ -36,16 +40,25 @@ app.lambda_handlers.medical_classifier_handler.lambda_handler
 - No FastAPI deployment.
 - No medical text persistence.
 
-The DynamoDB audit item is intentionally limited to:
+Cloud document persistence is not active in this module. `storage_mode` and
+`storage_policy_used` are modeled and enforced, but raw document text/PDFs are
+not persisted even when policy is `cloud` until an encrypted private S3 bucket,
+tenant-scoped keys, lifecycle policy, and least-privilege IAM are added in an
+approved change.
+
+The sanitized audit item is intentionally limited to:
 
 ```json
 {
   "request_id": "...",
-  "api_key_id_hash": "...",
-  "treatment_code": "...",
+  "api_key_hash_prefix": "...",
+  "project_number": "...",
+  "procedure_code": "...",
   "document_hash": "...",
-  "result_code": 1,
-  "indexes": {"IDX_KEY": 1},
+  "action": "classify_document",
+  "status": "success",
+  "duration_ms": 42,
+  "storage_policy_used": "local_only",
   "created_at": "..."
 }
 ```
@@ -119,13 +132,14 @@ not switch to that without an explicit architecture decision.
 Initialize:
 
 ```bash
-terraform -chdir=infra/serverless init
+terraform -chdir=infra/serverless init -backend=false
 ```
 
 Review:
 
 ```bash
-terraform -chdir=infra/serverless plan
+terraform -chdir=infra/serverless validate
+terraform -chdir=infra/serverless plan -refresh=false -input=false
 ```
 
 Apply only after approval:

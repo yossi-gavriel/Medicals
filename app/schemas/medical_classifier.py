@@ -45,6 +45,7 @@ class MedicalClassifierDocumentRequest(BaseModel):
     procedure_code: str | None = Field(default=None, max_length=128)
     treatment_code: str | None = Field(default=None, max_length=128)
     subject_ind: int | str | None = None
+    document_id: str | None = Field(default=None, max_length=256)
     document_text: str | None = None
     cleaned_desc: str | None = None
     cleaned_full: str | None = None
@@ -53,6 +54,19 @@ class MedicalClassifierDocumentRequest(BaseModel):
     external_document_id: str | None = Field(default=None, max_length=256)
     storage_preference: Literal["local_only", "cloud", "hybrid"] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_boundary_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        _copy_first_present(payload, "project_number", "project_id")
+        _copy_first_present(payload, "treatment_code", "procedure_code", "procedureCode", "treatmentCode")
+        _copy_first_present(payload, "document_text", "text", "full_text", "File_Full_Text", "file_full_text")
+        _copy_first_present(payload, "document_id", "file_id", "File_Name", "file_name")
+        _copy_first_present(payload, "file_name", "File_Name")
+        return payload
 
     @model_validator(mode="after")
     def normalize_fields(self) -> MedicalClassifierDocumentRequest:
@@ -64,9 +78,11 @@ class MedicalClassifierDocumentRequest(BaseModel):
             self.procedure_code = self.procedure_code.strip().lower() or None
         if isinstance(self.treatment_code, str):
             self.treatment_code = self.treatment_code.strip().lower() or None
-        resolved_code = self.procedure_code or self.treatment_code
+        resolved_code = self.treatment_code or self.procedure_code
         self.procedure_code = resolved_code
         self.treatment_code = resolved_code
+        if isinstance(self.document_id, str):
+            self.document_id = self.document_id.strip() or None
         if isinstance(self.cleaned_desc, str):
             self.cleaned_desc = self.cleaned_desc.strip() or None
         if isinstance(self.cleaned_full, str):
@@ -79,6 +95,8 @@ class MedicalClassifierDocumentRequest(BaseModel):
             self.connector_version = self.connector_version.strip() or None
         if isinstance(self.external_document_id, str):
             self.external_document_id = self.external_document_id.strip() or None
+        if not self.external_document_id and self.document_id:
+            self.external_document_id = self.document_id
         if not self.treatment_code:
             raise ValueError("procedure_code or treatment_code must be non-empty")
         if not self.cleaned_full and not self.cleaned_desc and not self.document_text:
@@ -96,3 +114,21 @@ class MedicalClassifierDocumentResponse(BaseModel):
     retryable: bool = False
     model_version: str | None = None
     request_id: str | None = None
+
+
+def _copy_first_present(payload: dict[str, Any], target: str, *aliases: str) -> None:
+    if _has_value(payload.get(target)):
+        return
+    for alias in aliases:
+        value = payload.get(alias)
+        if _has_value(value):
+            payload[target] = value
+            return
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True

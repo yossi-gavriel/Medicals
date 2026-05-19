@@ -9,6 +9,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import unquote
 
 from pydantic import ValidationError
 
@@ -20,6 +21,7 @@ from app.services.medical_classifier import (
     build_generic_fallback_prompt_json,
     build_medical_classifier_llm_runner,
     build_prompt_json_from_spec_body,
+    import_spec_from_omniscan_json,
 )
 from app.services.medical_classifier.cloud_store import (
     ApiKeyContext,
@@ -98,7 +100,7 @@ def _route_request(
     method: str,
     auth: ApiKeyContext,
 ) -> dict[str, Any]:
-    parts = [part for part in path.strip("/").split("/") if part]
+    parts = [unquote(part) for part in path.strip("/").split("/") if part]
 
     if parts == ["v1", "customer", "me"] and method == "GET":
         return _json_response(
@@ -167,6 +169,35 @@ def _route_request(
     if len(parts) >= 5 and parts[:2] == ["v1", "projects"] and parts[3] == "procedure-specs":
         project_number = parts[2]
         procedure_code = parts[4]
+        if len(parts) == 7 and parts[5:] == ["import", "omniscan"] and method == "POST":
+            payload = _json_body(event)
+            body_code = payload.get("procedure_code") or payload.get("treatment_code")
+            if body_code and normalize_procedure_code(body_code) != normalize_procedure_code(procedure_code):
+                raise ValueError("procedure_code in body must match the path procedure_code")
+            exported_spec = (
+                payload.get("exported_spec")
+                or payload.get("constitution")
+                or payload.get("omniscan")
+                or payload.get("omniscan_export")
+            )
+            if exported_spec is None and (
+                isinstance(payload.get("indexes"), list) or isinstance(payload.get("Indexes"), list)
+            ):
+                exported_spec = payload
+            if exported_spec is None:
+                raise ValueError("exported_spec is required")
+            result = import_spec_from_omniscan_json(
+                store=_get_cloud_store(),
+                tenant_id=auth.tenant_id,
+                project_number=project_number,
+                procedure_code=procedure_code,
+                treatment_code=payload.get("treatment_code"),
+                procedure_name=payload.get("procedure_name"),
+                exported_spec=exported_spec,
+                publish=_bool_from_payload(payload.get("publish"), default=True),
+                published_by=auth.api_key_id,
+            )
+            return _json_response(200, result, request_id=request_id)
         if len(parts) == 5 and method == "GET":
             spec_item = _get_cloud_store().get_procedure_spec(auth.tenant_id, project_number, procedure_code)
             if not spec_item:
@@ -444,6 +475,22 @@ def _json_body(event: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("body must be a JSON object")
     return parsed
+
+
+def _bool_from_payload(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
+    return default
 
 
 def _safe_write_classification_records(

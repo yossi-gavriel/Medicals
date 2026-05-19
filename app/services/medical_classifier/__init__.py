@@ -11,6 +11,11 @@ from app.services.medical_classifier.llm_runner import (
     build_runner_error,
 )
 from app.services.medical_classifier.metadata_sanitizer import sanitize_metadata_for_audit
+from app.services.medical_classifier.omniscan_spec_importer import (
+    SUPPORTED_OMNISCAN_EXPORT_FIELDS,
+    build_draft_spec_from_omniscan_json,
+    import_spec_from_omniscan_json,
+)
 from app.services.medical_classifier.pii_cleaner import mask_israeli_ids
 from app.services.medical_classifier.procedure_definition_loader import (
     CategoryDefinition,
@@ -32,10 +37,13 @@ __all__ = [
     "ProcedureDefinition",
     "ProcedureDefinitionLoader",
     "build_medical_classifier_llm_runner",
+    "build_draft_spec_from_omniscan_json",
     "build_generic_fallback_prompt_json",
     "build_prompt_json_from_definition",
     "build_prompt_json_from_spec_body",
     "build_runner_error",
+    "import_spec_from_omniscan_json",
     "mask_israeli_ids",
     "sanitize_metadata_for_audit",
+    "SUPPORTED_OMNISCAN_EXPORT_FIELDS",
 ]

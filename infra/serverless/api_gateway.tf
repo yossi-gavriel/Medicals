@@ -23,6 +23,7 @@ locals {
     "POST /v1/projects/{project_number}/procedure-specs",
     "GET /v1/projects/{project_number}/procedure-specs/{procedure_code}",
     "PUT /v1/projects/{project_number}/procedure-specs/{procedure_code}",
+    "POST /v1/projects/{project_number}/procedure-specs/{procedure_code}/import/omniscan",
     "POST /v1/projects/{project_number}/procedure-specs/{procedure_code}/publish",
     "GET /v1/projects/{project_number}/procedure-specs/{procedure_code}/versions",
     "GET /v1/projects/{project_number}/procedure-specs/{procedure_code}/current",

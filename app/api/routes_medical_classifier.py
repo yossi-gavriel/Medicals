@@ -10,8 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
-from app.core.security import ApiKeyDep, InternalApiKeyDep
-from app.core.security import resolve_tenant_id
+from app.core.security import ApiKeyDep, InternalApiKeyDep, resolve_tenant_id
 from app.models import MedicalClassifierAuditLog
 from app.schemas import (
     MedicalClassifierDocumentRequest,
@@ -89,7 +88,7 @@ async def _persist_connector_audit(
             request_id=request_id,
             api_key_id=getattr(request.state, "api_key_id", None),
             tenant_id=resolve_tenant_id(request),
-            file_name=payload.file_name,
+            file_name=payload.file_name or payload.document_id or payload.external_document_id or "unknown",
             doc_type=payload.doc_type,
             treatment_code=payload.treatment_code,
             subject_ind=str(payload.subject_ind) if payload.subject_ind is not None else None,
@@ -163,7 +162,7 @@ async def classify_connector_document(
     session: AsyncSession = Depends(get_db_session),
 ) -> MedicalClassifierDocumentResponse:
     started = time.perf_counter()
-    document_text = payload.cleaned_full or payload.cleaned_desc or ""
+    document_text = payload.document_text or payload.cleaned_full or payload.cleaned_desc or ""
     request_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())
     try:
         result = _classify(

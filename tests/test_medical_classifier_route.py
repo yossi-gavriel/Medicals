@@ -13,14 +13,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.database import Base, get_db_session
-from app.core.settings import get_settings
-from app.core.settings import Settings
 from app.api.routes_medical_classifier import router
+from app.core.database import Base, get_db_session
+from app.core.settings import Settings, get_settings
 from app.models import MedicalClassifierAuditLog
-from app.services.medical_classifier import ConfigurableLLMJsonPromptRunner
-from app.services.medical_classifier import ProcedureClassificationService
-from app.services.medical_classifier import build_generic_fallback_prompt_json
+from app.services.medical_classifier import (
+    ConfigurableLLMJsonPromptRunner,
+    ProcedureClassificationService,
+    build_generic_fallback_prompt_json,
+)
 
 
 def _write_definition(path: Path, treatment_code: str) -> None:
@@ -111,12 +112,11 @@ def _build_test_client_with_db(
 def _audit_rows(session_factory: async_sessionmaker[AsyncSession]) -> list[MedicalClassifierAuditLog]:
     async def _load():
         async with session_factory() as session:
-            rows = (
+            return (
                 await session.execute(
                     select(MedicalClassifierAuditLog).order_by(MedicalClassifierAuditLog.created_at)
                 )
             ).scalars().all()
-            return rows
 
     return asyncio.get_event_loop().run_until_complete(_load())
 
@@ -366,6 +366,64 @@ def test_public_medical_classifier_document_route_happy_path(
         "request_id": response.json()["request_id"],
     }
     assert response.json()["request_id"]
+
+
+def test_public_medical_classifier_document_route_accepts_official_document_text(
+    tmp_path: Path,
+    session_factory,
+) -> None:
+    definitions_dir = tmp_path / "definitions"
+    definitions_dir.mkdir()
+    _write_definition(definitions_dir / "arthroscopy_knee.json", "arthroscopy_knee")
+    runner = RecordingRunner(result_code="1")
+    service = ProcedureClassificationService(llm_runner=runner, definitions_path=definitions_dir)
+    client = _build_test_client_with_db(service, session_factory)
+
+    response = client.post(
+        "/v1/medical-classifier/classify-document",
+        json={
+            "project_number": "PROJECT_001",
+            "treatment_code": "arthroscopy_knee",
+            "document_text": "official full document text",
+            "document_id": "doc-official",
+        },
+    )
+    row = _audit_rows(session_factory)[0]
+
+    assert response.status_code == 200
+    assert runner.calls[0]["text"] == "official full document text"
+    assert row.file_name == "doc-official"
+    assert row.treatment_code == "arthroscopy_knee"
+
+
+def test_public_medical_classifier_document_route_accepts_omniscan_aliases(
+    tmp_path: Path,
+    session_factory,
+) -> None:
+    definitions_dir = tmp_path / "definitions"
+    definitions_dir.mkdir()
+    _write_definition(definitions_dir / "arthroscopy_knee.json", "arthroscopy_knee")
+    runner = RecordingRunner(result_code="1")
+    service = ProcedureClassificationService(llm_runner=runner, definitions_path=definitions_dir)
+    client = _build_test_client_with_db(service, session_factory)
+
+    response = client.post(
+        "/v1/medical-classifier/classify-document",
+        json={
+            "project_id": "PROJECT_001",
+            "procedureCode": "ARTHROSCOPY_KNEE",
+            "full_text": "aliased full document text",
+            "file_id": "doc-alias",
+            "File_Name": "doc-alias.pdf",
+        },
+    )
+    row = _audit_rows(session_factory)[0]
+
+    assert response.status_code == 200
+    assert runner.calls[0]["text"] == "aliased full document text"
+    assert row.file_name == "doc-alias.pdf"
+    assert row.treatment_code == "arthroscopy_knee"
+    assert row.document_text_hash == hashlib.sha256(b"aliased full document text").hexdigest()
 
 
 def test_public_medical_classifier_document_route_returns_rich_index_details_without_audit_snippets(

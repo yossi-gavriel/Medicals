@@ -148,7 +148,15 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: medical-classifier-serverless-plan
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          if [ "$account_id" != "$AWS_ACCOUNT_ID" ]; then
+            echo "::error::Expected AWS account ${AWS_ACCOUNT_ID}, got ${account_id}"
+            exit 1
+          fi
+          echo "AWS account verified: ${account_id}"
 
       - name: Export Terraform variables
         env:
@@ -270,7 +278,15 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: medical-classifier-serverless-apply
-          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          if [ "$account_id" != "$AWS_ACCOUNT_ID" ]; then
+            echo "::error::Expected AWS account ${AWS_ACCOUNT_ID}, got ${account_id}"
+            exit 1
+          fi
+          echo "AWS account verified: ${account_id}"
 
       - name: Export Terraform variables
         env:

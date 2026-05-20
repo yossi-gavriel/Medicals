@@ -7,7 +7,7 @@ on:
         description: "Run terraform apply after validation and environment approval"
         required: true
         type: boolean
-        default: true
+        default: false
   push:
     branches: [main]
     paths:
@@ -21,6 +21,7 @@ on:
       - "data/procedure_definitions/**"
       - "tests/test_lambda_cloud_platform.py"
       - "tests/test_medical_classifier_route.py"
+      - ".github/workflows/deploy-medical-classifier-serverless.yml"
 
 permissions:
   contents: read
@@ -31,6 +32,9 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
   AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
+  TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'medical-classifier/serverless/terraform.tfstate' }}
 
 jobs:
   validate:
@@ -79,6 +83,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Validate deployment configuration
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+        run: |
+          missing=0
+          for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
+            if [ -z "${!name}" ]; then
+              echo "::error::${name} is required for MedicalClassifier serverless deployment"
+              missing=1
+            fi
+          done
+          if [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
+            echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -110,21 +136,19 @@ jobs:
         run: terraform -chdir=infra/serverless fmt -check
 
       - name: Terraform init
-        run: terraform -chdir=infra/serverless init -backend=false
+        run: |
+          terraform -chdir=infra/serverless init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
 
       - name: Terraform validate
         run: terraform -chdir=infra/serverless validate
 
       - name: Terraform plan
-        run: terraform -chdir=infra/serverless plan -refresh=false -input=false -out=tfplan
-
-      - name: Upload Terraform plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: medical-classifier-tfplan
-          path: infra/serverless/tfplan
-          if-no-files-found: error
-          retention-days: 1
+        run: terraform -chdir=infra/serverless plan -refresh=false -input=false
 
   apply:
     name: Apply after approval
@@ -144,11 +168,27 @@ jobs:
           name: medical-classifier-lambda
           path: infra/serverless/build
 
-      - name: Download Terraform plan
-        uses: actions/download-artifact@v4
-        with:
-          name: medical-classifier-tfplan
-          path: infra/serverless
+      - name: Validate deployment configuration
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+        run: |
+          missing=0
+          for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
+            if [ -z "${!name}" ]; then
+              echo "::error::${name} is required for MedicalClassifier serverless deployment"
+              missing=1
+            fi
+          done
+          if [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
+            echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -178,7 +218,16 @@ jobs:
           fi
 
       - name: Terraform init
-        run: terraform -chdir=infra/serverless init -backend=false
+        run: |
+          terraform -chdir=infra/serverless init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform plan for apply
+        run: terraform -chdir=infra/serverless plan -refresh=false -input=false -out=tfplan
 
       - name: Terraform apply
         run: terraform -chdir=infra/serverless apply -input=false tfplan

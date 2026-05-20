@@ -136,12 +136,16 @@ safe parts of this flow:
 
 - On pushes to `main` that touch MedicalClassifier/serverless files, it runs
   focused tests, focused Ruff checks, packages the Lambda, runs Terraform
-  `fmt`, `init`, `validate`, and creates a Terraform plan artifact.
+  `fmt`, remote-backend `init`, `validate`, and `plan`. Pushes never apply.
 - On `workflow_dispatch`, it runs the same validation and planning. If the
   `apply` input is `true`, the apply job waits for the GitHub Environment
-  `medicals-serverless-prod` before running `terraform apply`.
+  `medicals-serverless-prod` before running a fresh `terraform plan -out=tfplan`
+  and `terraform apply`.
 - The apply job prints Terraform outputs `api_invoke_url` and
   `classify_document_url`. It does not print API keys or plaintext secrets.
+- Binary Terraform plan files are not uploaded as artifacts because plan files
+  can contain sensitive values. The apply job re-plans after environment
+  approval.
 
 Create the GitHub Environment `medicals-serverless-prod` and configure required
 reviewers before enabling production applies.
@@ -150,10 +154,13 @@ Required GitHub repository configuration:
 
 ```text
 Variable: AWS_REGION
+Variable: TF_STATE_BUCKET
+Variable: TF_STATE_LOCK_TABLE
+Variable: TF_STATE_KEY                                # optional; defaults to medical-classifier/serverless/terraform.tfstate
 Secret:   AWS_ROLE_TO_ASSUME
 Secret:   TF_VAR_API_KEY_HASHES
 Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER
-Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL
+Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL         # required when provider is not disabled
 Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME
 ```
 
@@ -162,35 +169,100 @@ Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME
 The plaintext API key is generated during customer provisioning and shared only
 through the approved secret channel.
 
-The workflow intentionally uses `terraform init -backend=false` because this
-module does not currently define a remote backend. That matches the existing
-manual runbook, but local Terraform state in GitHub Actions is not safe for
-long-term production operations. Add an S3 backend with DynamoDB locking in a
-separate approved change before relying on repeated production applies from
-GitHub Actions.
+The workflow uses GitHub OIDC through `aws-actions/configure-aws-credentials`.
+The assumed IAM role must be allowed to manage the resources in this module and
+to read/write the Terraform state bucket and lock table.
+
+## Remote State
+
+The serverless module uses an S3 backend configured at init time. The backend
+block intentionally has no hardcoded private bucket names:
+
+```hcl
+terraform {
+  backend "s3" {}
+}
+```
+
+Production init requires backend config:
+
+```bash
+terraform -chdir=infra/serverless init \
+  -backend-config="bucket=${TF_STATE_BUCKET}" \
+  -backend-config="key=${TF_STATE_KEY:-medical-classifier/serverless/terraform.tfstate}" \
+  -backend-config="region=${AWS_REGION}" \
+  -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+  -backend-config="encrypt=true"
+```
+
+Expected backend settings:
+
+```text
+TF_STATE_BUCKET      = approved existing S3 state bucket
+TF_STATE_LOCK_TABLE  = approved existing DynamoDB lock table
+TF_STATE_KEY         = medical-classifier/serverless/terraform.tfstate
+```
+
+The S3 bucket must have versioning enabled, server-side encryption enabled, and
+public access blocked. The DynamoDB lock table must have a string hash key named
+`LockID`.
+
+If these resources do not exist yet, bootstrap them first using
+`infra/bootstrap-state`. Do not run production applies from GitHub Actions until
+remote state exists and the GitHub variables above are configured.
+
+Bootstrap review:
+
+```bash
+terraform -chdir=infra/bootstrap-state init -backend=false
+terraform -chdir=infra/bootstrap-state plan \
+  -input=false \
+  -var="aws_region=${AWS_REGION}" \
+  -var="state_bucket_name=${TF_STATE_BUCKET}" \
+  -var="lock_table_name=${TF_STATE_LOCK_TABLE}"
+```
+
+Bootstrap apply only after cloud approval:
+
+```bash
+terraform -chdir=infra/bootstrap-state apply \
+  -input=false \
+  -var="aws_region=${AWS_REGION}" \
+  -var="state_bucket_name=${TF_STATE_BUCKET}" \
+  -var="lock_table_name=${TF_STATE_LOCK_TABLE}"
+```
+
+The bootstrap module itself uses local state because it creates the remote state
+foundation. Store that one-time bootstrap state according to the team's cloud
+operations process.
 
 ## Terraform Commands
 
-Initialize:
+For local syntax validation without cloud state:
 
 ```bash
 terraform -chdir=infra/serverless init -backend=false
+terraform -chdir=infra/serverless validate
 ```
 
-Review:
+For deployment review with remote state:
 
 ```bash
+terraform -chdir=infra/serverless init \
+  -backend-config="bucket=${TF_STATE_BUCKET}" \
+  -backend-config="key=${TF_STATE_KEY:-medical-classifier/serverless/terraform.tfstate}" \
+  -backend-config="region=${AWS_REGION}" \
+  -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}" \
+  -backend-config="encrypt=true"
 terraform -chdir=infra/serverless validate
 terraform -chdir=infra/serverless plan -refresh=false -input=false
 ```
 
-Apply only after approval:
+Apply only after explicit approval:
 
 ```bash
 terraform -chdir=infra/serverless apply
 ```
-
-This task does not run `apply`.
 
 ## Find the API URL
 
@@ -235,6 +307,57 @@ Projects -> Edit target project -> ExternalProjectCode = project_number
 
 The subject must have a `SubjectManagement.TreatmentCode` row, or the operator
 must enter `procedure_code` manually in the Run Constitution prompt.
+
+## Customer Provisioning
+
+Generate the customer API key once before deployment, hash it for Terraform, and
+store the plaintext only in the approved secret channel:
+
+```bash
+python - <<'PY'
+import hashlib
+from getpass import getpass
+
+api_key = getpass("Paste generated customer API key: ")
+print(hashlib.sha256(api_key.encode()).hexdigest())
+PY
+```
+
+Set the hash in GitHub as `TF_VAR_API_KEY_HASHES`, formatted as a Terraform
+list such as `["<64-char-sha256-hex>"]`. Do not put the plaintext key in GitHub
+Actions variables, Terraform variables, tickets, or logs.
+
+After the serverless stack exists, use `scripts/seed_customer.py` to create or
+confirm the tenant, DynamoDB API key hash record, and project. Prefer
+`--prompt-api-key` so the plaintext key is not stored in shell history.
+
+Dry-run first:
+
+```bash
+python scripts/seed_customer.py --dry-run onboard-customer \
+  --customer-name "Customer A" \
+  --license-number "LIC-001" \
+  --storage-mode local_only \
+  --project-number "10023" \
+  --project-name "POC Project" \
+  --prompt-api-key
+```
+
+Provision after approval:
+
+```bash
+python scripts/seed_customer.py onboard-customer \
+  --customer-name "Customer A" \
+  --license-number "LIC-001" \
+  --storage-mode local_only \
+  --project-number "10023" \
+  --project-name "POC Project" \
+  --prompt-api-key
+```
+
+The `project_number` argument is the exact value that OmniScan should store as
+`ExternalProjectCode`. The prompted plaintext API key is what OmniScan sends as
+`X-API-Key`; DynamoDB stores only its hash and prefix.
 
 ## Local Validation
 

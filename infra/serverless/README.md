@@ -89,16 +89,17 @@ api_key_hashes = [
 medical_classifier_llm_provider = "openai"
 medical_classifier_llm_model    = "gpt-4o-mini"
 
-# Prefer setting this through your secret workflow.
-medical_classifier_llm_api_key = "REPLACE_OUTSIDE_GIT"
+# Prefer an SSM SecureString created outside Terraform state.
+medical_classifier_llm_api_key_ssm_parameter_name = "/medicals/medical-classifier/llm-api-key/customer-poc"
 ```
 
 Do not commit `terraform.tfvars` or any file containing secrets.
 
 Note: Terraform stores managed values in state. The API key values here are
 hashes, not plaintext keys, but still treat Terraform state as sensitive. The
-LLM API key variable is plaintext if you set it directly; use an encrypted
-remote state and your normal secret workflow before production apply.
+LLM API key should live in SSM SecureString and be referenced by parameter name;
+use an encrypted remote state and your normal secret workflow before production
+apply.
 
 ## Package Lambda
 
@@ -126,6 +127,47 @@ That includes dependencies not used by this Lambda path. A later hardening step
 can split a smaller Lambda-only requirements file. If package size or native
 wheel compatibility becomes painful, consider a Lambda container image, but do
 not switch to that without an explicit architecture decision.
+
+## GitHub Actions Deployment
+
+The workflow
+`.github/workflows/deploy-medical-classifier-serverless.yml` automates the
+safe parts of this flow:
+
+- On pushes to `main` that touch MedicalClassifier/serverless files, it runs
+  focused tests, focused Ruff checks, packages the Lambda, runs Terraform
+  `fmt`, `init`, `validate`, and creates a Terraform plan artifact.
+- On `workflow_dispatch`, it runs the same validation and planning. If the
+  `apply` input is `true`, the apply job waits for the GitHub Environment
+  `medicals-serverless-prod` before running `terraform apply`.
+- The apply job prints Terraform outputs `api_invoke_url` and
+  `classify_document_url`. It does not print API keys or plaintext secrets.
+
+Create the GitHub Environment `medicals-serverless-prod` and configure required
+reviewers before enabling production applies.
+
+Required GitHub repository configuration:
+
+```text
+Variable: AWS_REGION
+Secret:   AWS_ROLE_TO_ASSUME
+Secret:   TF_VAR_API_KEY_HASHES
+Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER
+Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL
+Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME
+```
+
+`TF_VAR_API_KEY_HASHES` must be a Terraform-compatible list value, for example
+`["<64-char-sha256-hex>"]`. Store only hashes there, never plaintext API keys.
+The plaintext API key is generated during customer provisioning and shared only
+through the approved secret channel.
+
+The workflow intentionally uses `terraform init -backend=false` because this
+module does not currently define a remote backend. That matches the existing
+manual runbook, but local Terraform state in GitHub Actions is not safe for
+long-term production operations. Add an S3 backend with DynamoDB locking in a
+separate approved change before relying on repeated production applies from
+GitHub Actions.
 
 ## Terraform Commands
 
@@ -155,23 +197,44 @@ This task does not run `apply`.
 After apply, Terraform outputs:
 
 ```text
+api_invoke_url
 classify_document_url
 ```
 
-Use that URL as the OmniScan classifier API base/endpoint target depending on
-how OmniScan settings are wired.
+Use `api_invoke_url` as the OmniScan classifier API base URL, meaning the value
+before `/v1`. `classify_document_url` is the full classification endpoint and is
+not the Constitution import base URL.
 
 ## OmniScan Settings
 
 Set:
 
 ```text
-classifier_api_url = <classify_document_url or API base URL>
+classifier_api_url = <api_invoke_url, before /v1>
 classifier_api_key = <the plaintext API key whose hash was deployed>
 ```
 
 The Lambda validates the plaintext `X-API-Key` by hashing it and comparing it
 with the configured SHA-256 hashes using constant-time comparison.
+
+For an OmniScan smoke test, give Ofir:
+
+```text
+base URL: api_invoke_url, before /v1
+API key: plaintext customer key through the approved secret channel, redacted in tickets/logs
+project_number: the exact project_number provisioned for the customer project
+```
+
+OmniScan should then set:
+
+```text
+Settings -> Classifier API -> Constitution API URL = base URL
+Settings -> Classifier API -> API key = plaintext API key
+Projects -> Edit target project -> ExternalProjectCode = project_number
+```
+
+The subject must have a `SubjectManagement.TreatmentCode` row, or the operator
+must enter `procedure_code` manually in the Run Constitution prompt.
 
 ## Local Validation
 

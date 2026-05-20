@@ -1,0 +1,189 @@
+name: Deploy MedicalClassifier Serverless
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Run terraform apply after validation and environment approval"
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - "app/lambda_handlers/**"
+      - "app/services/medical_classifier/**"
+      - "app/schemas/medical_classifier.py"
+      - "app/api/routes_medical_classifier.py"
+      - "infra/serverless/**"
+      - "scripts/package_lambda.sh"
+      - "requirements.txt"
+      - "data/procedure_definitions/**"
+      - "tests/test_lambda_cloud_platform.py"
+      - "tests/test_medical_classifier_route.py"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PYTHON_VERSION: "3.11"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
+jobs:
+  validate:
+    name: Validate and plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Focused pytest
+        run: pytest tests/test_lambda_cloud_platform.py tests/test_medical_classifier_route.py
+
+      - name: Focused ruff
+        run: |
+          ruff check \
+            app/api/routes_medical_classifier.py \
+            app/lambda_handlers/medical_classifier_handler.py \
+            app/schemas/medical_classifier.py \
+            app/services/medical_classifier/__init__.py \
+            app/services/medical_classifier/omniscan_spec_importer.py \
+            tests/test_lambda_cloud_platform.py \
+            tests/test_medical_classifier_route.py
+
+      - name: Package Lambda
+        env:
+          PYTHON_BIN: python
+        run: ./scripts/package_lambda.sh
+
+      - name: Upload Lambda package
+        uses: actions/upload-artifact@v4
+        with:
+          name: medical-classifier-lambda
+          path: infra/serverless/build/medical-classifier-lambda.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: medical-classifier-serverless-plan
+
+      - name: Export Terraform variables
+        env:
+          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
+        run: |
+          if [ -n "$API_KEY_HASHES" ]; then
+            echo "TF_VAR_api_key_hashes=$API_KEY_HASHES" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_PROVIDER" ]; then
+            echo "TF_VAR_medical_classifier_llm_provider=$LLM_PROVIDER" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_MODEL" ]; then
+            echo "TF_VAR_medical_classifier_llm_model=$LLM_MODEL" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_API_KEY_SSM_PARAMETER_NAME" ]; then
+            echo "TF_VAR_medical_classifier_llm_api_key_ssm_parameter_name=$LLM_API_KEY_SSM_PARAMETER_NAME" >> "$GITHUB_ENV"
+          fi
+
+      - name: Terraform fmt
+        run: terraform -chdir=infra/serverless fmt -check
+
+      - name: Terraform init
+        run: terraform -chdir=infra/serverless init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=infra/serverless validate
+
+      - name: Terraform plan
+        run: terraform -chdir=infra/serverless plan -refresh=false -input=false -out=tfplan
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: medical-classifier-tfplan
+          path: infra/serverless/tfplan
+          if-no-files-found: error
+          retention-days: 1
+
+  apply:
+    name: Apply after approval
+    needs: validate
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+    environment: medicals-serverless-prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Download Lambda package
+        uses: actions/download-artifact@v4
+        with:
+          name: medical-classifier-lambda
+          path: infra/serverless/build
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: medical-classifier-tfplan
+          path: infra/serverless
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: medical-classifier-serverless-apply
+
+      - name: Export Terraform variables
+        env:
+          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
+        run: |
+          if [ -n "$API_KEY_HASHES" ]; then
+            echo "TF_VAR_api_key_hashes=$API_KEY_HASHES" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_PROVIDER" ]; then
+            echo "TF_VAR_medical_classifier_llm_provider=$LLM_PROVIDER" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_MODEL" ]; then
+            echo "TF_VAR_medical_classifier_llm_model=$LLM_MODEL" >> "$GITHUB_ENV"
+          fi
+          if [ -n "$LLM_API_KEY_SSM_PARAMETER_NAME" ]; then
+            echo "TF_VAR_medical_classifier_llm_api_key_ssm_parameter_name=$LLM_API_KEY_SSM_PARAMETER_NAME" >> "$GITHUB_ENV"
+          fi
+
+      - name: Terraform init
+        run: terraform -chdir=infra/serverless init -backend=false
+
+      - name: Terraform apply
+        run: terraform -chdir=infra/serverless apply -input=false tfplan
+
+      - name: Terraform outputs
+        run: |
+          echo "api_invoke_url=$(terraform -chdir=infra/serverless output -raw api_invoke_url)"
+          echo "classify_document_url=$(terraform -chdir=infra/serverless output -raw classify_document_url)"

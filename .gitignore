@@ -76,10 +76,13 @@ dump.rdb
 **/.terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
+tfplan
 crash.log
 crash.*.log
 *.tfvars
 *.tfvars.json
+infra/serverless/build/
 
 # OS
 .AppleDouble

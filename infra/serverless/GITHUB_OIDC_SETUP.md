@@ -190,6 +190,7 @@ Create `/tmp/github-actions-medicals-deploy-policy.json`:
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration",
         "lambda:GetPolicy",
+        "lambda:ListVersionsByFunction",
         "lambda:ListTags",
         "lambda:RemovePermission",
         "lambda:TagResource",
@@ -213,7 +214,8 @@ Create `/tmp/github-actions-medicals-deploy-policy.json`:
       ],
       "Resource": [
         "arn:aws:apigateway:il-central-1::/apis",
-        "arn:aws:apigateway:il-central-1::/apis/*"
+        "arn:aws:apigateway:il-central-1::/apis/*",
+        "arn:aws:apigateway:il-central-1::/tags/*"
       ]
     },
     {

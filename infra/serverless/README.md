@@ -221,6 +221,9 @@ allowed AWS account to `106300405464` and rejects `eu-west-1`; set
 `AWS_REGION=il-central-1` unless a documented service blocker requires
 `eu-central-1`.
 
+See `GITHUB_OIDC_SETUP.md` for the exact OIDC provider, deploy role trust
+policy, deploy permissions policy, and GitHub repository setup steps.
+
 ## Remote State
 
 The serverless module uses an S3 backend configured at init time. The backend

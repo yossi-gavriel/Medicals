@@ -21,11 +21,17 @@ class FakeDynamoDB:
     def put_item(self, *, TableName: str, Item: dict[str, Any]) -> None:  # noqa: N803
         table = self.tables.setdefault(TableName, [])
         item = _from_dynamodb_item(Item)
-        key_names = ["api_key_hash_prefix"] if "api_key_hash_prefix" in item and "tenant_id" not in item else [
-            "tenant_id",
-            "sort_key",
+        key_names = (
+            ["api_key_hash_prefix"]
+            if "api_key_hash_prefix" in item and "tenant_id" not in item
+            else [
+                "tenant_id",
+                "sort_key",
+            ]
+        )
+        table[:] = [
+            existing for existing in table if not all(existing.get(k) == item.get(k) for k in key_names)
         ]
-        table[:] = [existing for existing in table if not all(existing.get(k) == item.get(k) for k in key_names)]
         table.append(item)
 
     def get_item(self, *, TableName: str, Key: dict[str, Any]) -> dict[str, Any]:  # noqa: N803
@@ -35,8 +41,12 @@ class FakeDynamoDB:
                 return {"Item": _to_ddb_item(item)}
         return {}
 
-    def query(self, *, TableName: str, ExpressionAttributeValues: dict[str, Any], **kwargs: Any) -> dict[str, Any]:  # noqa: N803
-        values = {key: _from_dynamodb_item({"v": value})["v"] for key, value in ExpressionAttributeValues.items()}
+    def query(
+        self, *, TableName: str, ExpressionAttributeValues: dict[str, Any], **kwargs: Any
+    ) -> dict[str, Any]:  # noqa: N803
+        values = {
+            key: _from_dynamodb_item({"v": value})["v"] for key, value in ExpressionAttributeValues.items()
+        }
         items = self.tables.get(TableName, [])
         if ":gpk" in values:
             matched = [item for item in items if item.get("gsi1pk") == values[":gpk"]]
@@ -139,7 +149,9 @@ def _seed_tenant(fake: FakeDynamoDB, tenant_id: str, storage_mode: str | None = 
     fake.tables.setdefault("tenants", []).append(item)
 
 
-def _event(method: str, path: str, body: dict[str, Any] | None = None, api_key: str = API_KEY_A) -> dict[str, Any]:
+def _event(
+    method: str, path: str, body: dict[str, Any] | None = None, api_key: str = API_KEY_A
+) -> dict[str, Any]:
     return {
         "version": "2.0",
         "rawPath": path,
@@ -181,9 +193,15 @@ def _spec_payload() -> dict[str, Any]:
 
 
 def _seed_project_with_active_spec(project_number: str = "1001") -> None:
-    handler.lambda_handler(_event("POST", "/v1/projects", {"project_number": project_number, "name": "A"}), None)
-    handler.lambda_handler(_event("POST", f"/v1/projects/{project_number}/procedure-specs", _spec_payload()), None)
-    handler.lambda_handler(_event("POST", f"/v1/projects/{project_number}/procedure-specs/meniscus/publish", {}), None)
+    handler.lambda_handler(
+        _event("POST", "/v1/projects", {"project_number": project_number, "name": "A"}), None
+    )
+    handler.lambda_handler(
+        _event("POST", f"/v1/projects/{project_number}/procedure-specs", _spec_payload()), None
+    )
+    handler.lambda_handler(
+        _event("POST", f"/v1/projects/{project_number}/procedure-specs/meniscus/publish", {}), None
+    )
 
 
 def _classify_with_active_spec(
@@ -194,7 +212,9 @@ def _classify_with_active_spec(
     service = RecordingClassifierService()
     monkeypatch.setattr(handler, "_get_classifier_service", lambda: service)
     _seed_project_with_active_spec()
-    response = handler.lambda_handler(_event("POST", "/v1/medical-classifier/classify-document", payload), None)
+    response = handler.lambda_handler(
+        _event("POST", "/v1/medical-classifier/classify-document", payload), None
+    )
     return response, service
 
 
@@ -261,6 +281,43 @@ def _omniscan_export_with_duplicate_category_codes() -> dict[str, Any]:
     payload["rules"][0]["ApprovalCategoryCode"] = "10,11"
     payload["rules"][0]["SubjectStatusCode"] = "1,3"
     payload["rules"][0]["SubjectStatusDesc"] = "Normal procedure, implant details check"
+    return payload
+
+
+def _omniscan_export_with_multiple_rows() -> dict[str, Any]:
+    payload = _omniscan_export()
+    payload["indexes"][0]["Expression"] = "line one\nline two"
+    payload["indexes"].append(
+        {
+            "RowID": 502,
+            "IndexTypeCode": 2,
+            "IndexTypeDesc": "Alert",
+            "CategoryCode": 30,
+            "CategoryName": "Research alert",
+            "CategoryDesc": "Alert when research-only language appears.",
+            "Expression": "research only\nnot performed",
+            "Active": 0,
+        }
+    )
+    payload["rules"][0]["ApprovalCategoryCode"] = "10,30"
+    payload["rules"][0]["ApprovalCategoryDesc"] = "Meniscus repair performed,Research alert"
+    payload["rules"][0]["AlertCategoryCode"] = "30"
+    payload["rules"][0]["AlertCategoryDesc"] = "Research"
+    payload["rules"].append(
+        {
+            "RuleCode": 9002,
+            "RuleName": "Alert research only",
+            "RuleDesc": "Alert when the category indicates research-only text.",
+            "ApprovalCategoryCode": "",
+            "ApprovalCategoryDesc": "",
+            "AlertCategoryCode": "30",
+            "AlertCategoryDesc": "Research",
+            "ApprovalTypeCode": 2,
+            "ApprovalTypeDesc": "Alert",
+            "RulePriority": 5,
+            "Active": 0,
+        }
+    )
     return payload
 
 
@@ -395,7 +452,9 @@ def test_editing_after_publish_does_not_mutate_old_version(fake_ddb: FakeDynamoD
     assert fake_ddb.tables["procedure_spec_versions"][0]["version"] == 1
     assert fake_ddb.tables["procedure_spec_versions"][0]["spec_hash"] == first_hash
     assert fake_ddb.tables["procedure_spec_versions"][1]["version"] == 2
-    assert fake_ddb.tables["procedure_spec_versions"][1]["spec"]["indexes"][0]["label"] == "Changed draft label"
+    assert (
+        fake_ddb.tables["procedure_spec_versions"][1]["spec"]["indexes"][0]["label"] == "Changed draft label"
+    )
 
 
 def test_rejects_spec_without_procedure_name(fake_ddb: FakeDynamoDB) -> None:
@@ -551,6 +610,173 @@ def test_import_omniscan_raw_constitution_body_from_omniscan(fake_ddb: FakeDynam
     assert body["published"] is True
     assert body["procedure_spec"]["procedure_name"] == "Knee procedures"
     assert body["procedure_spec"]["current_version"] == 1
+
+
+def test_export_omniscan_returns_raw_constitution_after_import(fake_ddb: FakeDynamoDB) -> None:
+    handler.lambda_handler(_event("POST", "/v1/projects", {"project_number": "1001", "name": "A"}), None)
+    handler.lambda_handler(
+        _event(
+            "POST",
+            "/v1/projects/1001/procedure-specs/meniscus/import/omniscan",
+            _omniscan_export(),
+        ),
+        None,
+    )
+
+    response = handler.lambda_handler(
+        _event("GET", "/v1/projects/1001/procedure-specs/meniscus/export/omniscan"),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 200
+    assert "procedure_spec" not in body
+    assert set(body) == {"constitution_version", "exported_at", "subject", "indexes", "rules"}
+    assert body["constitution_version"] == "1"
+    assert body["subject"]["SubjectName"] == "Knee procedures"
+    assert body["indexes"][0] == {
+        "RowID": 501,
+        "IndexTypeCode": 1,
+        "IndexTypeDesc": "Approve",
+        "CategoryCode": 10,
+        "CategoryName": "Meniscus repair performed",
+        "CategoryDesc": "Approve only when the procedure was actually performed.",
+        "Expression": "Look for current-encounter meniscus repair or partial meniscectomy.",
+        "Active": 1,
+    }
+    assert body["rules"][0]["RuleCode"] == 9001
+    assert body["rules"][0]["RuleName"] == "Approve performed procedure"
+
+
+def test_export_omniscan_decodes_quoted_project_and_procedure_path(fake_ddb: FakeDynamoDB) -> None:
+    handler.lambda_handler(
+        _event("POST", "/v1/projects", {"project_number": "PROJECT 001", "name": "A"}),
+        None,
+    )
+    handler.lambda_handler(
+        _event(
+            "POST",
+            "/v1/projects/PROJECT%20001/procedure-specs/0SRD0J%5C0SRC0J/import/omniscan",
+            _omniscan_export(),
+        ),
+        None,
+    )
+
+    response = handler.lambda_handler(
+        _event(
+            "GET",
+            "/v1/projects/PROJECT%20001/procedure-specs/0SRD0J%5C0SRC0J/export/omniscan",
+        ),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 200
+    assert body["indexes"][0]["RowID"] == 501
+    assert body["rules"][0]["RuleCode"] == 9001
+
+
+def test_export_omniscan_returns_full_snapshot_and_comma_lists(fake_ddb: FakeDynamoDB) -> None:
+    handler.lambda_handler(_event("POST", "/v1/projects", {"project_number": "1001", "name": "A"}), None)
+    handler.lambda_handler(
+        _event(
+            "POST",
+            "/v1/projects/1001/procedure-specs/meniscus/import/omniscan",
+            _omniscan_export_with_multiple_rows(),
+        ),
+        None,
+    )
+
+    response = handler.lambda_handler(
+        _event("GET", "/v1/projects/1001/procedure-specs/meniscus/export/omniscan"),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 200
+    assert len(body["indexes"]) == 2
+    assert len(body["rules"]) == 2
+    assert body["indexes"][0]["Expression"] == "line one\nline two"
+    assert body["rules"][0]["ApprovalCategoryCode"] == "10,30"
+    assert body["rules"][0]["ApprovalCategoryDesc"] == "Meniscus repair performed,Research alert"
+    assert body["rules"][0]["AlertCategoryCode"] == "30"
+    assert body["rules"][0]["AlertCategoryDesc"] == "Research"
+
+
+def test_export_omniscan_backfills_legacy_import_metadata(fake_ddb: FakeDynamoDB) -> None:
+    handler.lambda_handler(_event("POST", "/v1/projects", {"project_number": "1001", "name": "A"}), None)
+    handler.lambda_handler(
+        _event(
+            "POST",
+            "/v1/projects/1001/procedure-specs/meniscus/import/omniscan",
+            _omniscan_export(),
+        ),
+        None,
+    )
+    fake_ddb.tables["procedure_spec_versions"][0]["spec"]["source"].pop("constitution_snapshot")
+
+    response = handler.lambda_handler(
+        _event("GET", "/v1/projects/1001/procedure-specs/meniscus/export/omniscan"),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 200
+    assert body["indexes"][0]["RowID"] == 501
+    assert body["rules"][0]["RuleCode"] == 9001
+
+
+def test_export_omniscan_keeps_active_as_ints(fake_ddb: FakeDynamoDB) -> None:
+    handler.lambda_handler(_event("POST", "/v1/projects", {"project_number": "1001", "name": "A"}), None)
+    handler.lambda_handler(
+        _event(
+            "POST",
+            "/v1/projects/1001/procedure-specs/meniscus/import/omniscan",
+            _omniscan_export_with_multiple_rows(),
+        ),
+        None,
+    )
+
+    response = handler.lambda_handler(
+        _event("GET", "/v1/projects/1001/procedure-specs/meniscus/export/omniscan"),
+        None,
+    )
+    body = _body(response)
+
+    assert type(body["indexes"][0]["Active"]) is int
+    assert type(body["indexes"][1]["Active"]) is int
+    assert type(body["rules"][0]["Active"]) is int
+    assert type(body["rules"][1]["Active"]) is int
+    assert body["indexes"][0]["Active"] == 1
+    assert body["indexes"][1]["Active"] == 0
+    assert body["rules"][0]["Active"] == 1
+    assert body["rules"][1]["Active"] == 0
+
+
+def test_export_omniscan_returns_404_for_missing_spec(fake_ddb: FakeDynamoDB) -> None:
+    response = handler.lambda_handler(
+        _event("GET", "/v1/projects/1001/procedure-specs/missing/export/omniscan"),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 404
+    assert body["error"] == "procedure_spec_not_found"
+
+
+def test_export_omniscan_rejects_invalid_api_key(fake_ddb: FakeDynamoDB) -> None:
+    response = handler.lambda_handler(
+        _event(
+            "GET",
+            "/v1/projects/1001/procedure-specs/meniscus/export/omniscan",
+            api_key="wrong-key",
+        ),
+        None,
+    )
+    body = _body(response)
+
+    assert response["statusCode"] == 401
+    assert body["error"] == "invalid_api_key"
 
 
 @pytest.mark.parametrize("wrapper_key", ["constitution", "omniscan"])

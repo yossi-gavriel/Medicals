@@ -11,7 +11,19 @@ from app.services.medical_classifier.cloud_store import (
 )
 
 SUPPORTED_OMNISCAN_EXPORT_FIELDS = {
-    "root": ["constitution_version", "subject", "indexes", "rules"],
+    "root": ["constitution_version", "exported_at", "subject", "indexes", "rules"],
+    "subject": [
+        "SubjectNumber",
+        "SubjectName",
+        "ProjectID",
+        "ProjectName",
+        "FolderName",
+        "ProcessType",
+        "ProcedureName",
+        "TreatmentCode",
+        "TreatmentDesc",
+        "Active",
+    ],
     "index": [
         "key",
         "IndexKey",
@@ -114,6 +126,7 @@ def build_draft_spec_from_omniscan_json(exported_spec: dict[str, Any]) -> dict[s
     rules = _list_from(exported_spec, "rules", "Rules")
     subject = exported_spec.get("subject") if isinstance(exported_spec.get("subject"), dict) else {}
     mapped_indexes = _map_indexes(indexes, rules)
+    constitution_snapshot = _constitution_snapshot(exported_spec, indexes, rules)
     draft_spec = {
         "system_prompt": _system_prompt(subject),
         "indexes": mapped_indexes,
@@ -125,6 +138,7 @@ def build_draft_spec_from_omniscan_json(exported_spec: dict[str, Any]) -> dict[s
             "project_id": _safe_text(subject.get("ProjectID"), max_len=64),
             "index_count": len(mapped_indexes),
             "rule_count": len(rules),
+            "constitution_snapshot": constitution_snapshot,
         },
     }
     validate_procedure_spec_body(draft_spec, require_publishable=True)
@@ -153,7 +167,9 @@ def _map_indexes(indexes: list[Any], rules: list[dict[str, Any]]) -> list[dict[s
     return mapped
 
 
-def _map_index(index: Any, rules: list[dict[str, Any]], position: int, *, key: str | None = None) -> dict[str, Any]:
+def _map_index(
+    index: Any, rules: list[dict[str, Any]], position: int, *, key: str | None = None
+) -> dict[str, Any]:
     if not isinstance(index, dict):
         raise ValueError(f"index #{position} must be an object")
 
@@ -205,12 +221,74 @@ def _map_index(index: Any, rules: list[dict[str, Any]], position: int, *, key: s
         "negative_phrases": _str_list(index.get("negative_phrases") or index.get("NegativePhrases")),
         "rules": rule_lines,
         "omniscan": {
-            "row_id": _safe_text(index.get("RowID"), max_len=64),
-            "index_type_code": _safe_text(index.get("IndexTypeCode"), max_len=64),
-            "category_code": _safe_text(category_code, max_len=64),
-            "active": _bool_from(index.get("Active")),
+            "row_id": _safe_omniscan_value(index.get("RowID"), max_len=64),
+            "index_type_code": _safe_omniscan_value(index.get("IndexTypeCode"), max_len=64),
+            "index_type_desc": _safe_omniscan_value(index.get("IndexTypeDesc"), max_len=256),
+            "category_code": _safe_omniscan_value(category_code, max_len=64),
+            "category_name": _safe_omniscan_value(label, max_len=512),
+            "category_desc": _safe_omniscan_value(description, max_len=4000),
+            "expression": _safe_omniscan_value(expression, max_len=8000),
+            "active": _active_int_or_none(index.get("Active")),
         },
     }
+
+
+def _constitution_snapshot(
+    exported_spec: dict[str, Any],
+    indexes: list[dict[str, Any]],
+    rules: list[dict[str, Any]],
+) -> dict[str, Any]:
+    subject = exported_spec.get("subject") if isinstance(exported_spec.get("subject"), dict) else {}
+    return {
+        "constitution_version": _safe_omniscan_value(
+            exported_spec.get("constitution_version"),
+            max_len=64,
+        ),
+        "subject": _allowlisted_object(subject, SUPPORTED_OMNISCAN_EXPORT_FIELDS["subject"]),
+        "indexes": [
+            _allowlisted_object(index, SUPPORTED_OMNISCAN_EXPORT_FIELDS["index"])
+            for index in indexes
+            if isinstance(index, dict)
+        ],
+        "rules": [
+            _allowlisted_object(rule, SUPPORTED_OMNISCAN_EXPORT_FIELDS["rule"])
+            for rule in rules
+            if isinstance(rule, dict)
+        ],
+    }
+
+
+def _allowlisted_object(payload: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for field in fields:
+        if field not in payload:
+            continue
+        sanitized_value = _safe_omniscan_value(payload.get(field), max_len=8000)
+        if sanitized_value is not None:
+            sanitized[field] = sanitized_value
+    return sanitized
+
+
+def _safe_omniscan_value(value: Any, *, max_len: int = 2000) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int | float):
+        return value
+    if isinstance(value, list):
+        sanitized = [_safe_omniscan_value(item, max_len=max_len) for item in value]
+        return [item for item in sanitized if item is not None]
+    text = str(value).strip()
+    if not text:
+        return None
+    return text[:max_len]
+
+
+def _active_int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return 1 if _bool_from(value) else 0
 
 
 def _index_key(index: dict[str, Any], position: int) -> str:
@@ -401,7 +479,9 @@ def _code_list(payload: dict[str, Any], *keys: str) -> list[str]:
             continue
         if isinstance(value, list):
             return [_safe_text(item, max_len=64) for item in value if _safe_text(item, max_len=64)]
-        return [_safe_text(item, max_len=64) for item in str(value).split(",") if _safe_text(item, max_len=64)]
+        return [
+            _safe_text(item, max_len=64) for item in str(value).split(",") if _safe_text(item, max_len=64)
+        ]
     return []
 
 

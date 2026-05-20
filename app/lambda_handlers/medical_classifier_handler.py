@@ -21,6 +21,7 @@ from app.services.medical_classifier import (
     build_generic_fallback_prompt_json,
     build_medical_classifier_llm_runner,
     build_prompt_json_from_spec_body,
+    export_current_spec_to_omniscan_json,
     import_spec_from_omniscan_json,
 )
 from app.services.medical_classifier.cloud_store import (
@@ -123,11 +124,15 @@ def _route_request(
 
     if path == CLASSIFY_PATH:
         if method != "POST":
-            return _json_response(405, _error_payload(request_id, "method_not_allowed"), request_id=request_id)
+            return _json_response(
+                405, _error_payload(request_id, "method_not_allowed"), request_id=request_id
+            )
         return _handle_classify_document(event, request_id=request_id, auth=auth, legacy_route=True)
 
     if parts == ["v1", "projects"] and method == "GET":
-        return _json_response(200, {"projects": _get_cloud_store().list_projects(auth.tenant_id)}, request_id=request_id)
+        return _json_response(
+            200, {"projects": _get_cloud_store().list_projects(auth.tenant_id)}, request_id=request_id
+        )
 
     if parts == ["v1", "projects"] and method == "POST":
         created_project = _get_cloud_store().put_project(auth.tenant_id, _json_body(event))
@@ -169,6 +174,14 @@ def _route_request(
     if len(parts) >= 5 and parts[:2] == ["v1", "projects"] and parts[3] == "procedure-specs":
         project_number = parts[2]
         procedure_code = parts[4]
+        if len(parts) == 7 and parts[5:] == ["export", "omniscan"] and method == "GET":
+            exported_spec = export_current_spec_to_omniscan_json(
+                store=_get_cloud_store(),
+                tenant_id=auth.tenant_id,
+                project_number=project_number,
+                procedure_code=procedure_code,
+            )
+            return _json_response(200, exported_spec, request_id=request_id)
         if len(parts) == 7 and parts[5:] == ["import", "omniscan"] and method == "POST":
             payload = _json_body(event)
             body_code = payload.get("procedure_code") or payload.get("treatment_code")
@@ -287,9 +300,7 @@ def _handle_classify_document(
 
     if project_number:
         project_item = _get_cloud_store().get_project(auth.tenant_id, project_number)
-        project_storage_override = (
-            project_item.get("default_storage_mode_override") if project_item else None
-        )
+        project_storage_override = project_item.get("default_storage_mode_override") if project_item else None
         storage_policy_used = resolve_storage_policy(
             tenant_storage_mode=tenant.get("storage_mode"),
             project_storage_mode_override=project_storage_override,
@@ -350,7 +361,7 @@ def _handle_classify_document(
                 "storage_policy_used": storage_policy_used,
                 "error_code": "classifier_exception",
                 "created_at": _utc_now_iso(),
-            }
+            },
         )
         return _json_response(
             500,
@@ -415,7 +426,7 @@ def _handle_classify_document(
             "storage_policy_used": storage_policy_used,
             "error_code": error_code,
             "created_at": _utc_now_iso(),
-        }
+        },
     )
 
     response_body: dict[str, Any] = {
@@ -661,6 +672,7 @@ def _error_payload(
     message: str | None = None,
 ) -> dict[str, Any]:
     payload = {
+        "error": message or error_code,
         "result_code": result_code,
         "request_id": request_id,
         "indexes": indexes or {},

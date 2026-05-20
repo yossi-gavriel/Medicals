@@ -1,0 +1,94 @@
+{
+  "treatment_code": "arthroscopy_knee",
+  "procedure_name": "ארתרוסקופיה ברך",
+  "procedure_aliases": [
+    "Knee arthroscopy",
+    "ארטרוסקופיה של הברך",
+    "arthroscopic knee surgery"
+  ],
+  "source": "manual_ministry_of_health_mapping_example",
+  "current_hospitalization_only": true,
+  "require_actual_performance": true,
+  "priority_sections": [
+    "תיאור ניתוח",
+    "מהלך ניתוח",
+    "מהלך אשפוז",
+    "סיכום פעולה",
+    "operative report",
+    "procedure note"
+  ],
+  "global_positive_signals": [
+    "בוצע ניתוח",
+    "בוצעה ארתרוסקופיה",
+    "בהרדמה",
+    "הוכנס ארתרוסקופ",
+    "נמצאו ממצאים תוך ניתוחיים",
+    "בוצעה שטיפה",
+    "performed",
+    "underwent",
+    "operative findings"
+  ],
+  "global_negative_signals": [
+    "התקבל לצורך",
+    "מיועד לניתוח",
+    "מתוכנן",
+    "יופנה",
+    "הומלץ",
+    "בעבר",
+    "ניתוחים בעבר",
+    "planned",
+    "referred for",
+    "history of"
+  ],
+  "categories": [
+    {
+      "key": "IDX_PROCEDURE_PERFORMED",
+      "title": "האם הניתוח בוצע בפועל",
+      "description": "זיהוי ביצוע בפועל של ארתרוסקופיה ברך במהלך האשפוז/הפעולה הנוכחית בלבד.",
+      "scope": "full",
+      "positive_signals": [
+        "בוצעה ארתרוסקופיה",
+        "הוכנס ארתרוסקופ",
+        "בוצעה פעולה תוך מפרקית",
+        "underwent knee arthroscopy"
+      ],
+      "negative_signals": [
+        "התקבל לצורך ארתרוסקופיה",
+        "מתוכנן לארתרוסקופיה",
+        "עבר בעבר ארתרוסקופיה"
+      ],
+      "examples_positive": [
+        "בוצעה ארתרוסקופיה לברך ימין בהרדמה ספינלית.",
+        "במהלך הניתוח הוכנס ארתרוסקופ ונצפה קרע במניסקוס."
+      ],
+      "examples_negative": [
+        "התקבל אלקטיבית לניתוח ארתרוסקופיה.",
+        "ברקע: ארתרוסקופיה בברך שמאל לפני 5 שנים."
+      ]
+    },
+    {
+      "key": "IDX_CURRENT_ENCOUNTER_ONLY",
+      "title": "האם הראיה שייכת לאשפוז/פעולה נוכחיים",
+      "description": "בודק שהאזכור אינו היסטוריה רפואית, תכנון עתידי, או סיבת הפניה בלבד.",
+      "scope": "full",
+      "positive_signals": [
+        "במהלך אשפוז זה",
+        "היום בוצע",
+        "במהלך הפעולה",
+        "operative report dated"
+      ],
+      "negative_signals": [
+        "ברקע",
+        "בעבר",
+        "לפני שנים",
+        "מתוכנן להמשך"
+      ],
+      "examples_positive": [
+        "במהלך אשפוזו בוצעה הפעולה ללא סיבוכים."
+      ],
+      "examples_negative": [
+        "ידוע על ניתוח קודם בברך מ-2018."
+      ]
+    }
+  ]
+}

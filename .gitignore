@@ -90,7 +90,9 @@ infra/serverless/build/
 Icon?
 
 # Reference / seed data (may contain sensitive info — commit explicitly when ready)
-data/
+data/*
+!data/procedure_definitions/
+!data/procedure_definitions/**
 
 # Customer-side connector (separate deployment unit — committed separately)
 medical_classifier_option_c/

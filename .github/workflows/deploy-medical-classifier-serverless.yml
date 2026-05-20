@@ -31,6 +31,7 @@ env:
   PYTHON_VERSION: "3.11"
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
+  AWS_ACCOUNT_ID: "106300405464"
   AWS_REGION: ${{ vars.AWS_REGION }}
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
   TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
@@ -101,6 +102,18 @@ jobs:
             echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
             missing=1
           fi
+          case "$AWS_REGION" in
+            il-central-1|eu-central-1)
+              ;;
+            eu-west-1)
+              echo "::error::AWS_REGION=eu-west-1 is Ireland. Use il-central-1, or eu-central-1 only if il-central-1 has a confirmed blocker."
+              missing=1
+              ;;
+            *)
+              echo "::error::AWS_REGION must be il-central-1, or eu-central-1 only as an approved fallback."
+              missing=1
+              ;;
+          esac
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
@@ -111,6 +124,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: medical-classifier-serverless-plan
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       - name: Export Terraform variables
         env:
@@ -186,6 +200,18 @@ jobs:
             echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
             missing=1
           fi
+          case "$AWS_REGION" in
+            il-central-1|eu-central-1)
+              ;;
+            eu-west-1)
+              echo "::error::AWS_REGION=eu-west-1 is Ireland. Use il-central-1, or eu-central-1 only if il-central-1 has a confirmed blocker."
+              missing=1
+              ;;
+            *)
+              echo "::error::AWS_REGION must be il-central-1, or eu-central-1 only as an approved fallback."
+              missing=1
+              ;;
+          esac
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
@@ -196,6 +222,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: medical-classifier-serverless-apply
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       - name: Export Terraform variables
         env:

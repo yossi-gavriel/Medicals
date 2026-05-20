@@ -66,6 +66,51 @@ The sanitized audit item is intentionally limited to:
 Do not add raw document text, `cleaned_full`, `cleaned_desc`, `matched_text`,
 `evidence`, raw request bodies, or API keys to logs or DynamoDB.
 
+## Account And Region
+
+Use the company AWS account:
+
+```text
+AWS account ID: 106300405464
+AWS profile: company-medicals
+Preferred AWS region: il-central-1
+Fallback AWS region: eu-central-1
+```
+
+Preflight before any AWS or Terraform action:
+
+```bash
+aws sts get-caller-identity --profile company-medicals
+```
+
+The returned `Account` must be `106300405464`. Stop if any other account is
+returned.
+
+Use `il-central-1` because the workload and customer are in Israel. Before
+apply, verify Terraform/provider support for the required stack services in
+`il-central-1`: Lambda, API Gateway HTTP API, DynamoDB, CloudWatch Logs, IAM,
+SSM Parameter Store, S3 remote state, and DynamoDB state locking. If a required
+service/resource has a concrete blocker in `il-central-1`, stop and report the
+blocker, then use `eu-central-1` as the fallback. Do not use `eu-west-1` unless
+there is a separate documented reason.
+
+Read-only regional preflight checks, run before any apply:
+
+```bash
+aws lambda get-account-settings --profile company-medicals --region il-central-1
+aws apigatewayv2 get-apis --profile company-medicals --region il-central-1 --max-items 1
+aws dynamodb list-tables --profile company-medicals --region il-central-1 --max-items 1
+aws logs describe-log-groups --profile company-medicals --region il-central-1 --limit 1
+aws ssm describe-parameters --profile company-medicals --region il-central-1 --max-items 1
+aws iam get-account-summary --profile company-medicals
+```
+
+These checks must succeed or fail only because resources do not exist yet. If
+they fail with `AccessDenied`, fix the deployer/OIDC role permissions before
+planning or applying. If they fail because a service or Terraform provider
+resource is unavailable in `il-central-1`, stop and use `eu-central-1` as the
+documented fallback.
+
 ## Generate an API Key Hash
 
 Use a strong random API key and pass only its SHA-256 hash to Terraform:
@@ -80,7 +125,7 @@ PY
 Example `terraform.tfvars`:
 
 ```hcl
-aws_region = "eu-central-1"
+aws_region = "il-central-1"
 
 api_key_hashes = [
   "REPLACE_WITH_64_CHAR_SHA256_HEX_DIGEST"
@@ -90,7 +135,7 @@ medical_classifier_llm_provider = "openai"
 medical_classifier_llm_model    = "gpt-4o-mini"
 
 # Prefer an SSM SecureString created outside Terraform state.
-medical_classifier_llm_api_key_ssm_parameter_name = "/medicals/medical-classifier/llm-api-key/customer-poc"
+medical_classifier_llm_api_key_ssm_parameter_name = "/medicals/medical-classifier/llm-api-key/company-medicals"
 ```
 
 Do not commit `terraform.tfvars` or any file containing secrets.
@@ -153,7 +198,7 @@ reviewers before enabling production applies.
 Required GitHub repository configuration:
 
 ```text
-Variable: AWS_REGION
+Variable: AWS_REGION                                # il-central-1 preferred; eu-central-1 approved fallback
 Variable: TF_STATE_BUCKET
 Variable: TF_STATE_LOCK_TABLE
 Variable: TF_STATE_KEY                                # optional; defaults to medical-classifier/serverless/terraform.tfstate
@@ -171,7 +216,10 @@ through the approved secret channel.
 
 The workflow uses GitHub OIDC through `aws-actions/configure-aws-credentials`.
 The assumed IAM role must be allowed to manage the resources in this module and
-to read/write the Terraform state bucket and lock table.
+to read/write the Terraform state bucket and lock table. The workflow pins the
+allowed AWS account to `106300405464` and rejects `eu-west-1`; set
+`AWS_REGION=il-central-1` unless a documented service blocker requires
+`eu-central-1`.
 
 ## Remote State
 

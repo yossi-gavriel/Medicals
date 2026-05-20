@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region for the Terraform state resources."
   type        = string
-  default     = "eu-central-1"
+  default     = "il-central-1"
 }
 
 variable "project_name" {

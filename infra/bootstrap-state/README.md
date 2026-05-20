@@ -14,14 +14,29 @@ state files, bucket names, lock table names, or credentials.
 
 ## Usage
 
-Choose a globally unique bucket name outside the repo:
+Use the company AWS account and prefer the Israel/Tel Aviv region:
 
 ```bash
-export AWS_PROFILE=customer-poc
-export AWS_REGION=eu-central-1
+export AWS_PROFILE=company-medicals
+export AWS_REGION=il-central-1
 export TF_STATE_BUCKET='<approved-unique-state-bucket-name>'
 export TF_STATE_LOCK_TABLE='medical-classifier-terraform-locks'
 ```
+
+Preflight before any Terraform action:
+
+```bash
+aws sts get-caller-identity --profile company-medicals
+```
+
+The returned `Account` must be `106300405464`. Stop if any other account is
+returned.
+
+Use `il-central-1` unless Terraform/service preflight finds a concrete blocker
+for Lambda, API Gateway HTTP API, DynamoDB, CloudWatch Logs, IAM, SSM Parameter
+Store, S3, or DynamoDB locking. If there is a blocker, stop and use
+`eu-central-1` as the fallback. Do not use `eu-west-1` unless a separate,
+documented reason is approved.
 
 Initialize and review:
 

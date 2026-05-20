@@ -12,12 +12,45 @@ Terraform state, tickets, or logs.
 
 ## Internal Cloud Setup
 
-1. Prepare AWS credentials for a non-production POC account/profile.
+1. Prepare AWS credentials for the company Medicals account/profile.
 
 ```bash
-export AWS_PROFILE=customer-poc
-export AWS_REGION=eu-central-1
+export AWS_PROFILE=company-medicals
+export AWS_REGION=il-central-1
 ```
+
+Preflight before any AWS or Terraform action:
+
+```bash
+aws sts get-caller-identity --profile company-medicals
+```
+
+The returned `Account` must be `106300405464`. Stop if any other account is
+returned.
+
+Use `il-central-1` because the workload and customer are in Israel. Before
+apply, verify Terraform/provider support for Lambda, API Gateway HTTP API,
+DynamoDB, CloudWatch Logs, IAM, SSM Parameter Store, S3 remote state, and
+DynamoDB state locking in `il-central-1`. If a required service/resource has a
+concrete blocker in `il-central-1`, stop and report the blocker, then use
+`eu-central-1` as the fallback. Do not use `eu-west-1` unless a separate
+documented reason is approved.
+
+Read-only preflight checks:
+
+```bash
+aws lambda get-account-settings --profile company-medicals --region il-central-1
+aws apigatewayv2 get-apis --profile company-medicals --region il-central-1 --max-items 1
+aws dynamodb list-tables --profile company-medicals --region il-central-1 --max-items 1
+aws logs describe-log-groups --profile company-medicals --region il-central-1 --limit 1
+aws ssm describe-parameters --profile company-medicals --region il-central-1 --max-items 1
+aws iam get-account-summary --profile company-medicals
+```
+
+If these fail with `AccessDenied`, fix deployer/OIDC permissions before
+planning or applying. If they fail because a required service/resource is not
+available in `il-central-1`, stop and use `eu-central-1` as the documented
+fallback.
 
 2. Validate Terraform.
 
@@ -39,7 +72,7 @@ terraform apply
 
 ```bash
 aws ssm put-parameter \
-  --name /medicals/medical-classifier/llm-api-key/customer-poc \
+  --name /medicals/medical-classifier/llm-api-key/company-medicals \
   --type SecureString \
   --value '<paste-secret-securely>' \
   --overwrite

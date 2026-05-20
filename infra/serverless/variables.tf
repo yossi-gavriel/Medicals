@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region for the serverless MedicalClassifier stack."
   type        = string
-  default     = "eu-central-1"
+  default     = "il-central-1"
 }
 
 variable "project_name" {

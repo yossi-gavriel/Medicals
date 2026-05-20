@@ -87,10 +87,34 @@ jobs:
       - name: Validate deployment configuration
         env:
           AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
-          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
-          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          API_KEY_HASHES: ${{ secrets.MEDICAL_CLASSIFIER_API_KEY_HASHES || secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.MEDICAL_CLASSIFIER_LLM_PROVIDER || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.MEDICAL_CLASSIFIER_LLM_MODEL || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
         run: |
+          print_presence() {
+            name="$1"
+            if [ -n "${!name}" ]; then
+              echo "${name}: present"
+            else
+              echo "${name}: missing"
+            fi
+          }
+
+          for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
+            print_presence "$name"
+          done
+          if [ -n "${LLM_MODEL}" ]; then
+            echo "LLM_MODEL: present"
+          else
+            echo "LLM_MODEL: empty (allowed when LLM_PROVIDER=disabled)"
+          fi
+          if [ -n "${LLM_API_KEY_SSM_PARAMETER_NAME}" ]; then
+            echo "LLM_API_KEY_SSM_PARAMETER_NAME: present"
+          else
+            echo "LLM_API_KEY_SSM_PARAMETER_NAME: empty (optional)"
+          fi
+
           missing=0
           for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
             if [ -z "${!name}" ]; then
@@ -98,7 +122,7 @@ jobs:
               missing=1
             fi
           done
-          if [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
+          if [ -n "${LLM_PROVIDER}" ] && [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
             echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
             missing=1
           fi
@@ -128,10 +152,10 @@ jobs:
 
       - name: Export Terraform variables
         env:
-          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
-          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
-          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
-          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
+          API_KEY_HASHES: ${{ secrets.MEDICAL_CLASSIFIER_API_KEY_HASHES || secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.MEDICAL_CLASSIFIER_LLM_PROVIDER || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.MEDICAL_CLASSIFIER_LLM_MODEL || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
         run: |
           if [ -n "$API_KEY_HASHES" ]; then
             echo "TF_VAR_api_key_hashes=$API_KEY_HASHES" >> "$GITHUB_ENV"
@@ -185,10 +209,34 @@ jobs:
       - name: Validate deployment configuration
         env:
           AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
-          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
-          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          API_KEY_HASHES: ${{ secrets.MEDICAL_CLASSIFIER_API_KEY_HASHES || secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.MEDICAL_CLASSIFIER_LLM_PROVIDER || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.MEDICAL_CLASSIFIER_LLM_MODEL || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
         run: |
+          print_presence() {
+            name="$1"
+            if [ -n "${!name}" ]; then
+              echo "${name}: present"
+            else
+              echo "${name}: missing"
+            fi
+          }
+
+          for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
+            print_presence "$name"
+          done
+          if [ -n "${LLM_MODEL}" ]; then
+            echo "LLM_MODEL: present"
+          else
+            echo "LLM_MODEL: empty (allowed when LLM_PROVIDER=disabled)"
+          fi
+          if [ -n "${LLM_API_KEY_SSM_PARAMETER_NAME}" ]; then
+            echo "LLM_API_KEY_SSM_PARAMETER_NAME: present"
+          else
+            echo "LLM_API_KEY_SSM_PARAMETER_NAME: empty (optional)"
+          fi
+
           missing=0
           for name in AWS_REGION TF_STATE_BUCKET TF_STATE_LOCK_TABLE TF_STATE_KEY AWS_ROLE_TO_ASSUME API_KEY_HASHES LLM_PROVIDER; do
             if [ -z "${!name}" ]; then
@@ -196,7 +244,7 @@ jobs:
               missing=1
             fi
           done
-          if [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
+          if [ -n "${LLM_PROVIDER}" ] && [ "${LLM_PROVIDER}" != "disabled" ] && [ -z "${LLM_MODEL}" ]; then
             echo "::error::LLM_MODEL is required when LLM_PROVIDER is not disabled"
             missing=1
           fi
@@ -226,10 +274,10 @@ jobs:
 
       - name: Export Terraform variables
         env:
-          API_KEY_HASHES: ${{ secrets.TF_VAR_API_KEY_HASHES }}
-          LLM_PROVIDER: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
-          LLM_MODEL: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
-          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
+          API_KEY_HASHES: ${{ secrets.MEDICAL_CLASSIFIER_API_KEY_HASHES || secrets.TF_VAR_API_KEY_HASHES }}
+          LLM_PROVIDER: ${{ vars.MEDICAL_CLASSIFIER_LLM_PROVIDER || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER }}
+          LLM_MODEL: ${{ vars.MEDICAL_CLASSIFIER_LLM_MODEL || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL }}
+          LLM_API_KEY_SSM_PARAMETER_NAME: ${{ vars.MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME || vars.TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME }}
         run: |
           if [ -n "$API_KEY_HASHES" ]; then
             echo "TF_VAR_api_key_hashes=$API_KEY_HASHES" >> "$GITHUB_ENV"

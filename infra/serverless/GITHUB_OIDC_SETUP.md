@@ -339,19 +339,21 @@ AWS_REGION=il-central-1
 TF_STATE_BUCKET=medical-classifier-tfstate-106300405464
 TF_STATE_LOCK_TABLE=medical-classifier-terraform-locks
 TF_STATE_KEY=medical-classifier/serverless/terraform.tfstate
-TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER=disabled
-TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL=
-TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME=
+MEDICAL_CLASSIFIER_LLM_PROVIDER=disabled
+MEDICAL_CLASSIFIER_LLM_MODEL=
+MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME=
 ```
 
 Repository secrets:
 
 ```text
 AWS_ROLE_TO_ASSUME=arn:aws:iam::106300405464:role/github-actions-medicals-deploy
-TF_VAR_API_KEY_HASHES=["<sha256-api-key-hash>"]
+MEDICAL_CLASSIFIER_API_KEY_HASHES=["<sha256-api-key-hash>"]
 ```
 
-`TF_VAR_API_KEY_HASHES` must contain only hashes, never plaintext API keys.
+`MEDICAL_CLASSIFIER_API_KEY_HASHES` must contain only hashes, never plaintext
+API keys. The workflow maps the GitHub names to Terraform `TF_VAR_*`
+environment variables internally.
 
 ## API Key Hash Flow
 
@@ -368,22 +370,23 @@ PY
 ```
 
 Store the plaintext key only in the approved secret channel. Paste only the
-hash into `TF_VAR_API_KEY_HASHES`, wrapped as a Terraform list string.
+hash into `MEDICAL_CLASSIFIER_API_KEY_HASHES`, wrapped as a Terraform list
+string.
 
 ## LLM Configuration
 
 `medical_classifier_llm_provider` defaults to `disabled`, and the Terraform
 module supports deploying with the LLM disabled. Use
-`TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER=disabled` for the first Constitution
+`MEDICAL_CLASSIFIER_LLM_PROVIDER=disabled` for the first Constitution
 import smoke deployment unless document classification with live LLM reasoning
 is required immediately.
 
 If enabling an LLM provider, set:
 
 ```text
-TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER=<provider>
-TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL=<model>
-TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME=<existing-securestring-parameter-name>
+MEDICAL_CLASSIFIER_LLM_PROVIDER=<provider>
+MEDICAL_CLASSIFIER_LLM_MODEL=<model>
+MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME=<existing-securestring-parameter-name>
 ```
 
 Do not store the plaintext LLM API key in Terraform variables or GitHub Actions

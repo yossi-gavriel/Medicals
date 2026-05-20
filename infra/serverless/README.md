@@ -203,15 +203,17 @@ Variable: TF_STATE_BUCKET
 Variable: TF_STATE_LOCK_TABLE
 Variable: TF_STATE_KEY                                # optional; defaults to medical-classifier/serverless/terraform.tfstate
 Secret:   AWS_ROLE_TO_ASSUME
-Secret:   TF_VAR_API_KEY_HASHES
-Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_PROVIDER
-Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_MODEL         # required when provider is not disabled
-Variable: TF_VAR_MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME
+Secret:   MEDICAL_CLASSIFIER_API_KEY_HASHES
+Variable: MEDICAL_CLASSIFIER_LLM_PROVIDER
+Variable: MEDICAL_CLASSIFIER_LLM_MODEL                # required when provider is not disabled
+Variable: MEDICAL_CLASSIFIER_LLM_API_KEY_SSM_PARAMETER_NAME
 ```
 
-`TF_VAR_API_KEY_HASHES` must be a Terraform-compatible list value, for example
-`["<64-char-sha256-hex>"]`. Store only hashes there, never plaintext API keys.
-The plaintext API key is generated during customer provisioning and shared only
+`MEDICAL_CLASSIFIER_API_KEY_HASHES` must be a Terraform-compatible list value,
+for example `["<64-char-sha256-hex>"]`. Store only hashes there, never
+plaintext API keys. The workflow maps these GitHub names to the corresponding
+`TF_VAR_*` environment variables internally before running Terraform. The
+plaintext API key is generated during customer provisioning and shared only
 through the approved secret channel.
 
 The workflow uses GitHub OIDC through `aws-actions/configure-aws-credentials`.
@@ -374,9 +376,9 @@ print(hashlib.sha256(api_key.encode()).hexdigest())
 PY
 ```
 
-Set the hash in GitHub as `TF_VAR_API_KEY_HASHES`, formatted as a Terraform
-list such as `["<64-char-sha256-hex>"]`. Do not put the plaintext key in GitHub
-Actions variables, Terraform variables, tickets, or logs.
+Set the hash in GitHub as `MEDICAL_CLASSIFIER_API_KEY_HASHES`, formatted as a
+Terraform list such as `["<64-char-sha256-hex>"]`. Do not put the plaintext key
+in GitHub Actions variables, Terraform variables, tickets, or logs.
 
 After the serverless stack exists, use `scripts/seed_customer.py` to create or
 confirm the tenant, DynamoDB API key hash record, and project. Prefer
